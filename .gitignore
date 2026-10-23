@@ -1,0 +1,12 @@
+# Build output and logs
+Packaged/
+Logs/
+AssetGraphExporter/Binaries/
+AssetGraphExporter/Intermediate/
+
+# Machine-specific paths
+Scripts/LocalConfig.bat
+
+# IDE
+.vs/
+.idea/

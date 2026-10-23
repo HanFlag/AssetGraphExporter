@@ -1,26 +1,52 @@
 @echo off
-rem Builds the plugin on its own with the engine's BuildPlugin command (no game project needed).
-rem Output: Packaged\AssetGraphExporter   Log: Logs\build.log
+rem Builds the plugins on their own with the engine's BuildPlugin command (no game project needed).
+rem   Build.bat        both plugins
+rem   Build.bat core   AssetGraphExporter only
+rem   Build.bat mcp    AssetGraphExporterMcp only (needs the Unreal MCP engine plugin)
+rem Output: Packaged\<Plugin>   Logs: Logs\build.log, Logs\build_mcp.log
+rem Stop Serve.bat first (age_shutdown or Ctrl+C): a running server keeps Packaged\ DLLs locked.
 setlocal
 for %%I in ("%~dp0..") do set "ROOT=%%~fI"
 if exist "%~dp0LocalConfig.bat" call "%~dp0LocalConfig.bat"
 if not defined UE_ROOT set "UE_ROOT=C:\Program Files\Epic Games\UE_5.8"
-
 if not exist "%ROOT%\Logs" mkdir "%ROOT%\Logs"
-set "LOG=%ROOT%\Logs\build.log"
 
-echo Building AssetGraphExporter with "%UE_ROOT%"
-echo This takes a few minutes. Full log: %LOG%
-call "%UE_ROOT%\Engine\Build\BatchFiles\RunUAT.bat" BuildPlugin -Plugin="%ROOT%\AssetGraphExporter\AssetGraphExporter.uplugin" -Package="%ROOT%\Packaged\AssetGraphExporter" -NoTargetPlatforms > "%LOG%" 2>&1
-set "RESULT=%ERRORLEVEL%"
-
-echo.
-echo ---- last lines of the log ----
-powershell -NoProfile -Command "Get-Content -Tail 30 -LiteralPath '%LOG%'"
-echo.
-if "%RESULT%"=="0" (
-	echo BUILD SUCCEEDED
-) else (
-	echo BUILD FAILED with exit code %RESULT%. See Logs\build.log
+set "WHAT=%~1"
+if "%WHAT%"=="" set "WHAT=all"
+if /i not "%WHAT%"=="all" if /i not "%WHAT%"=="core" if /i not "%WHAT%"=="mcp" (
+	echo Usage: Build.bat [all^|core^|mcp]
+	exit /b 1
 )
+
+set "CORE=%ROOT%\AssetGraphExporter\AssetGraphExporter.uplugin"
+set "MCP=%ROOT%\AssetGraphExporterMcp\AssetGraphExporterMcp.uplugin"
+set "RUNUAT=%UE_ROOT%\Engine\Build\BatchFiles\RunUAT.bat"
+echo Engine: "%UE_ROOT%". Each plugin takes a few minutes.
+if /i "%WHAT%"=="mcp" goto :mcp
+
+echo Building AssetGraphExporter ...
+call "%RUNUAT%" BuildPlugin -Plugin="%CORE%" -Package="%ROOT%\Packaged\AssetGraphExporter" -NoTargetPlatforms > "%ROOT%\Logs\build.log" 2>&1
+set "RESULT=%ERRORLEVEL%"
+call :ShowLog "%ROOT%\Logs\build.log" AssetGraphExporter %RESULT%
+if not "%RESULT%"=="0" exit /b %RESULT%
+if /i "%WHAT%"=="core" exit /b 0
+
+:mcp
+rem -Dependencies puts the core plugin next to this one in the temporary host project, so it can link against it.
+echo Building AssetGraphExporterMcp ...
+call "%RUNUAT%" BuildPlugin -Plugin="%MCP%" -Package="%ROOT%\Packaged\AssetGraphExporterMcp" -Dependencies="%CORE%" -NoTargetPlatforms > "%ROOT%\Logs\build_mcp.log" 2>&1
+set "RESULT=%ERRORLEVEL%"
+call :ShowLog "%ROOT%\Logs\build_mcp.log" AssetGraphExporterMcp %RESULT%
 exit /b %RESULT%
+
+:ShowLog
+echo.
+echo ---- last lines of %~1 ----
+powershell -NoProfile -Command "Get-Content -Tail 30 -LiteralPath '%~1'"
+echo.
+if "%~3"=="0" (
+	echo %~2: BUILD SUCCEEDED
+) else (
+	echo %~2: BUILD FAILED with exit code %~3. See %~1
+)
+exit /b 0

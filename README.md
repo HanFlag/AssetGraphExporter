@@ -7,7 +7,8 @@ Blueprint, Animation Blueprint, StateTree를 비롯해 어떤 UObject 에셋이�
 - `.uasset` 바이너리를 직접 파싱하지 않습니다. 엔진이 에셋을 로드하는 커맨드렛(`UCommandlet`)으로 동작합니다.
 - 프로젝트 이름, 에셋 경로, 게임 클래스는 코드 어디에도 들어 있지 않습니다. 플러그인 폴더만 복사하면 다른 프로젝트에서도 그대로 동작합니다.
 - 에셋은 읽기만 하고 저장하지 않습니다.
-- 대상 엔진: UE 5.8 (5.8.4에서 빌드 확인, Win64)
+- 대상 엔진: UE 5.8 (5.8.4에서 빌드 확인, Win64). MCP 플러그인은 5.8.4에서 빌드와 동작(상주 서버 모드, 에디터 모드)까지 확인했습니다.
+- 별도 플러그인 `AssetGraphExporterMcp`를 함께 설치하면, 같은 내용을 엔진 내장 Unreal MCP 서버의 도구(`age_*`)로 바로 물어볼 수 있습니다. 에디터를 끈 상태에서도 됩니다. 아래 [MCP 도구](#mcp-도구-assetgraphexportermcp)를 보세요.
 
 ## 폴더 구조
 
@@ -15,8 +16,11 @@ Blueprint, Animation Blueprint, StateTree를 비롯해 어떤 UObject 에셋이�
 AssetGraphExporter/            ← 저장소
   AssetGraphExporter/          ← 플러그인 본체 (설치할 때 이 폴더를 복사)
     AssetGraphExporter.uplugin
-    Source/AssetGraphExporter/            범용 처리 + Blueprint/AnimBP + 커맨드렛 (Editor 모듈)
+    Source/AssetGraphExporter/            범용 처리 + Blueprint/AnimBP + 커맨드렛 + 요약 (Editor 모듈)
     Source/AssetGraphExporterStateTree/   StateTree 처리기 (Editor 모듈)
+  AssetGraphExporterMcp/       ← MCP 연결 플러그인 (선택 설치, Unreal MCP 엔진 플러그인 필요)
+    AssetGraphExporterMcp.uplugin
+    Source/AssetGraphExporterMcp/         age_* 도구 + 상주 커맨드렛 AssetGraphServe (Editor 모듈)
   Scripts/                     빌드·실행용 배치 파일
   Packaged/                    Build.bat 결과물 (git 무시)
   Logs/                        빌드·실행 로그 (git 무시)
@@ -76,12 +80,77 @@ UnrealEditor-Cmd.exe <Project>.uproject -run=AssetGraphExport [옵션]
 
 ```
 Scripts\Setup.bat         최초 1회: git init, Scripts\LocalConfig.bat 생성
-Scripts\Build.bat         플러그인 빌드 → Packaged\
+Scripts\Build.bat         두 플러그인 빌드 → Packaged\  (Build.bat core / Build.bat mcp 로 하나만)
 Scripts\Export.bat -Assets=/Game/Folder/BP_Thing,/Game/Folder/ST_Tree
 Scripts\Export.bat -Path=/Game/Folder -Class=Blueprint -Out=C:\Temp\Export
+Scripts\Serve.bat         에디터 없이 MCP 서버 켜기 (아래 MCP 도구 참고)
+Scripts\Editor.bat        두 플러그인을 -PLUGIN=으로 불러온 채 에디터 열기 (프로젝트 수정 없음)
 ```
 
 `Scripts\LocalConfig.bat`(git 무시)에 엔진 경로 `UE_ROOT`와 대상 프로젝트 `AGE_PROJECT`를 지정합니다.
+
+## MCP 도구 (AssetGraphExporterMcp)
+
+엔진 내장 Unreal MCP 서버(`ModelContextProtocol` 플러그인, Experimental)에 `age_*` 도구를 추가하는 플러그인입니다.
+Claude Code는 서버 하나(기본 `http://127.0.0.1:8000/mcp`)에만 연결하면 되고, 상황에 따라 대답하는 쪽이 바뀝니다.
+
+```
+Claude Code ──→ 127.0.0.1:8000/mcp
+   ├ 에디터 켜짐: 에디터 안의 Unreal MCP 서버 + age_* 도구   (저장 안 한 변경까지 보임)
+   └ 에디터 꺼짐: Serve.bat → 상주 커맨드렛이 같은 서버를 띄움  (디스크에 저장된 파일 기준)
+```
+
+- 도구는 `IModelContextProtocolModule::AddTool`로 서버에 직접 등록합니다. 그래서 `tools/list`에 바로 나오고, 결과도 이스케이프 없는 텍스트로 돌려줍니다.
+  (ToolsetRegistry 툴셋은 `list_toolsets` → `describe_toolset` → `call_tool`을 거쳐야 하고, 문자열 결과가 한 번 더 감싸집니다.)
+- 별도 플러그인으로 둔 이유: Unreal MCP는 Experimental이라 엔진 버전마다 바뀔 수 있습니다. 또 기본 플러그인에 넣으면, 그것을 쓰는 모든 프로젝트에서 Unreal MCP가 강제로 켜집니다.
+- 각 대답의 첫 줄은 출처입니다. 예: `source: editor`, `source: editor (has unsaved changes)`, `source: saved file (2026-10-23 12:00:00 UTC)`.
+
+### 도구
+
+| 도구 | 하는 일 |
+|---|---|
+| `age_find_assets` | 이름(일부)·폴더·클래스로 에셋 찾기. 로드하지 않습니다. |
+| `age_get_asset` | 위 JSON 스키마 그대로(공백 없는 JSON). `select`로 일부만 받습니다. 예: `stateTree.bindings`, `blueprint.graphs[EventGraph]`, `blueprint.graphs[0].nodes[3]`. 결과가 `maxChars`(기본 40000자)보다 길면 대신 목차(경로, 항목 수, 크기)를 돌려줍니다. |
+| `age_statetree_overview` | 상태 트리 요약: 상태 계층, 진입 조건, 태스크, 전환(대상, 트리거, 조건)을 한 줄씩 |
+| `age_statetree_bindings` | 바인딩을 `원본 -> 대상` 한 줄씩. `filter`로 거르기 |
+| `age_animbp_overview` | AnimBP 요약: 변수, AnimGraph 포즈 흐름, 스테이트 머신의 상태별 포즈와 전환 규칙(식으로) |
+| `age_status` | 지금 대답하는 쪽(에디터 / 상주 서버), 프로젝트, 엔진·플러그인 버전 |
+| `age_shutdown` | 상주 서버 끄기 (에디터 안에서는 아무것도 하지 않음) |
+
+요약 도구의 출력 예 (`age_animbp_overview` 일부):
+
+```
+StateMachine Main
+  entry -> Locomotion
+  state Locomotion: BS2D_BossMoveLocomotion Blendspace Player(X=Direction, Y=Speed2D)
+  CombatMove -> TurnInPlace if (bIsCombatMove AND (Speed2D < 10) AND (Abs(AimTurnRate) > 20))
+```
+
+### 상주 서버 (`Serve.bat`, 커맨드렛 `AssetGraphServe`)
+
+```
+UnrealEditor-Cmd.exe <Project>.uproject -run=AssetGraphServe [-IdleMinutes=30] [-IgnoreEditor]
+```
+
+- 엔진 시작은 켤 때 한 번입니다. 그 뒤 질문은 엔진을 다시 띄우지 않습니다.
+- 측정(MomentTrigger, 2026-10-24):
+  - 재부팅 뒤 첫 실행은 준비까지 62초였습니다. 이 중 Zen 저장소 서버 시작이 8.8초, 셰이더 타입 준비가 17초입니다. 바로 다음 실행(에디터 거절 시험)에서는 둘 다 1초 안팎이었습니다.
+  - 켜진 뒤 도구 호출은 4–460 ms입니다. 첫 `age_find_assets`만 2.7초 걸렸습니다(에셋 목록 캐시 126 MB를 디스크에 쓰는 시간).
+  - `age_shutdown` 후 프로세스가 끝나기까지 3.4초(응답을 보내려고 기다리는 1초 + 엔진 종료 2.4초).
+- 엔진이 허용하는 방식입니다. Unreal MCP 설정 코드(`ModelContextProtocolSettings.cpp`)에 커맨드렛은 서버를 직접 켜라는 주석이 있고, 에디터 커맨드렛도 `UEditorEngine`을 만들고 PostEngineInit까지 거칩니다(`LaunchEngineLoop.cpp`). 커맨드렛 루프에서 `FTSTicker`를 돌려 HTTP·MCP 서버를 움직입니다.
+- 다음 경우에 스스로 꺼집니다: `age_shutdown`, Ctrl+C, `age_*` 요청 없이 `-IdleMinutes`분(기본 30, 0이면 끄지 않음), Unreal Editor가 켜졌을 때(같은 포트를 에디터에 넘김). 에디터가 켜져 있으면 시작하지 않습니다. `Serve.bat`이 엔진을 띄우기 전에 먼저 확인하므로 바로 거절됩니다(`-IgnoreEditor`로 무시).
+- **C++ 빌드 전에는 꺼야 합니다.** 켜져 있는 동안 프로젝트와 플러그인 DLL이 로드되어 있어 빌드가 덮어쓰지 못합니다.
+- 디스크 기준입니다. 서버가 켜진 뒤 다시 저장된 에셋은 다음 요청 때 다시 읽습니다(`UPackageTools::ReloadPackages`).
+- 내장 Unreal MCP 도구(`call_tool`)도 같이 열립니다. 다만 에디터 창이나 뷰포트가 필요한 도구는 이 모드에서 실패할 수 있습니다.
+- 텍스트 언어는 Export 커맨드렛과 같이 영어로 고정합니다. 에디터 모드는 에디터 언어를 그대로 씁니다(사용자 화면을 바꾸지 않기 위해).
+- 포트와 URL은 Unreal MCP 설정을 따릅니다. `-ModelContextProtocolPort=N`으로 포트를 바꿀 수 있습니다.
+
+### 설치와 연결
+
+1. 두 플러그인을 설치합니다. 방법 A는 `AssetGraphExporter/`와 `AssetGraphExporterMcp/`를 함께 `<프로젝트>/Plugins/`에 복사, 방법 B는 `Scripts\Build.bat` 후 `Serve.bat` / `Editor.bat`(둘 다 `-PLUGIN=`으로 불러옴).
+2. 에디터 모드: Unreal MCP 서버가 켜져 있어야 합니다. 에디터 모드에서는 호출마다 약 0.33초가 걸렸습니다. `tools/list`도 같은 시간이 걸리므로, 도구 처리 시간이 아니라 에디터가 요청을 처리하는 프레임 간격으로 보입니다(에디터 창이 뒤에 있으면 프레임을 줄입니다). Project Settings > Plugins > Model Context Protocol의 Auto Start Server를 켜거나(엔진 로그가 안내하는 위치), 콘솔 명령 `ModelContextProtocol.StartServer`를 씁니다.
+3. Claude Code에 서버를 등록합니다: `claude mcp add --transport http unreal http://127.0.0.1:8000/mcp`
+   (엔진 콘솔 명령 `ModelContextProtocol.GenerateClientConfig ClaudeCode`로 설정 파일을 만들 수도 있습니다.)
 
 ## 출력
 
@@ -291,6 +360,7 @@ UE 5.8은 이 정보를 노드의 `Binding` 객체(`UAnimGraphNodeBinding_Base::
 - 여러 처리기가 같은 에셋을 맡겠다고 하면 우선순위가 높은 쪽이 이깁니다(AnimBlueprint 20 > Blueprint 10).
 - 값을 쓸 때는 `FAGEPropertyWriter`, 그래프를 쓸 때는 `FAGEGraphWriter`를 재사용할 수 있습니다.
 - 다른 프런트엔드(예: MCP 서버)에서는 `FAGEAssetExporter::ExportAsset`을 그대로 호출하면 됩니다.
+- 내보낸 JSON을 짧은 텍스트로 바꾸는 함수는 `AGE::Summary`(`AGESummary.h`), JSON 일부 선택·목차는 `AGE::JsonQuery`(`AGEJsonQuery.h`)에 있습니다. 둘 다 내보낸 JSON만 읽으므로 MCP 없이도 쓸 수 있습니다.
 
 ## 알려진 한계 (0.1.0)
 
@@ -298,3 +368,6 @@ UE 5.8은 이 정보를 노드의 `Binding` 객체(`UAnimGraphNodeBinding_Base::
 - Actor BP의 `components[].properties`는 컴포넌트 클래스 기본값과 비교한 차이입니다.
 - `-Class` 필터로 BP를 부모 클래스 기준으로 찾을 때, 부모가 BP이면 그 부모 BP를 로드합니다.
 - 레벨(맵) 에셋은 범용 `properties`만 나옵니다.
+- 상주 서버의 "다시 저장된 에셋 다시 읽기"는 아직 실제로 시험하지 않았습니다(시험하려면 `Content/` 파일을 바꿔야 해서).
+- 상주 서버는 요청받은 에셋의 패키지만 다시 읽습니다. 그 에셋이 참조하는 다른 에셋(예: 부모 BP)이 바뀐 경우, 그것이 메모리에서 정리(2분마다)되거나 직접 요청될 때까지 예전 값이 섞일 수 있습니다.
+- `age_animbp_overview`는 EventGraph와 함수 그래프를 요약하지 않습니다(이름과 노드 수만). BP 그래프 요약은 다음 단계 후보입니다.

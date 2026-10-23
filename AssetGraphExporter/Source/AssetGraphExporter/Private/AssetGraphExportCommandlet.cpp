@@ -1,7 +1,7 @@
 // Asset Graph Exporter
 
 #include "AssetGraphExportCommandlet.h"
-#include "AGEAssetCollector.h"
+#include "AGEAssetQuery.h"
 #include "AGEAssetExporter.h"
 #include "AGEExportContext.h"
 #include "AGELog.h"

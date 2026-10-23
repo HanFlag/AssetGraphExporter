@@ -3,6 +3,8 @@ Packaged/
 Logs/
 AssetGraphExporter/Binaries/
 AssetGraphExporter/Intermediate/
+AssetGraphExporterMcp/Binaries/
+AssetGraphExporterMcp/Intermediate/
 
 # Machine-specific paths
 Scripts/LocalConfig.bat

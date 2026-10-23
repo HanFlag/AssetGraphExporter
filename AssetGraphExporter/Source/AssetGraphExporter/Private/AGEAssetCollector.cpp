@@ -1,6 +1,6 @@
 // Asset Graph Exporter
 
-#include "AGEAssetCollector.h"
+#include "AGEAssetQuery.h"
 #include "AGELog.h"
 #include "AssetRegistry/ARFilter.h"
 #include "AssetRegistry/IAssetRegistry.h"
@@ -82,10 +82,17 @@ namespace
 TArray<FAssetData> AGE::CollectAssets(const FAGEAssetQuery& Query, TArray<FString>& OutErrors)
 {
 	IAssetRegistry& AssetRegistry = IAssetRegistry::GetChecked();
-	// Commandlets do not scan in the background; make sure the registry is complete before querying.
-	const double ScanStart = FPlatformTime::Seconds();
-	AssetRegistry.SearchAllAssets(true);
-	UE_LOG(LogAssetGraphExporter, Display, TEXT("[Timing] Asset registry scan: %.2f s"), FPlatformTime::Seconds() - ScanStart);
+	if (Query.bRescan)
+	{
+		// Commandlets do not scan in the background; make sure the registry is complete before querying.
+		const double ScanStart = FPlatformTime::Seconds();
+		AssetRegistry.SearchAllAssets(true);
+		UE_LOG(LogAssetGraphExporter, Display, TEXT("[Timing] Asset registry scan: %.2f s"), FPlatformTime::Seconds() - ScanStart);
+	}
+	else if (AssetRegistry.IsLoadingAssets())
+	{
+		OutErrors.Add(TEXT("The asset registry is still scanning (editor just started); results may be incomplete."));
+	}
 
 	TArray<UClass*> Classes;
 	for (const FString& ClassName : Query.Classes)

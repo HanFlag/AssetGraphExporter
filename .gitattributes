@@ -1,0 +1,15 @@
+# Store text with LF in the repository; check out with the platform's native line endings.
+* text=auto
+
+# Windows batch files must keep CRLF (cmd.exe can misparse LF-only scripts).
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary files: never convert line endings or diff as text.
+*.uasset binary
+*.umap   binary
+*.dll    binary
+*.pdb    binary
+*.exe    binary
+*.png    binary
+*.jpg    binary

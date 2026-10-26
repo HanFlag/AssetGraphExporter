@@ -68,6 +68,7 @@ UnrealEditor-Cmd.exe <Project>.uproject -run=AssetGraphExport [옵션]
 | `-Class=<클래스들>` | 클래스 필터입니다(하위 클래스 포함). 네이티브 클래스는 짧은 이름(`Blueprint`, `StateTree`, `GameplayAbility`)으로, BP 클래스는 전체 경로(`/Game/BP_Base.BP_Base_C`)로 씁니다. Blueprint는 부모 클래스로도 맞춥니다. 예를 들어 `-Class=GameplayAbility`로 GA 블루프린트를 찾을 수 있습니다. |
 | `-Out=<폴더>` | 출력 폴더입니다. 기본값은 `<프로젝트>/Saved/AssetExport`이고, 상대 경로는 프로젝트 폴더를 기준으로 합니다. |
 | `-Full` | 기본값과 같은 값까지 전부 씁니다. 기본 동작은 기본값과 다른 값만 쓰는 것입니다(아래 참고). |
+| `-Incremental` | 같은 `-Out` 폴더에 지난번 내보낸 결과가 있으면, 바뀌지 않은 에셋은 로드하지 않고 그 파일을 그대로 둡니다. 지난번에는 있었는데 이번에는 없는 에셋의 파일은 지웁니다(지난 `index.json`에 적힌 파일만). 아래 [증분 내보내기](#증분-내보내기-incremental) 참고. |
 
 `-Assets`나 `-Path` 중 하나 이상은 반드시 지정해야 합니다.
 종료 코드는 모든 에셋이 성공하면 0, 아니면 1입니다.
@@ -207,6 +208,17 @@ UnrealEditor-Cmd.exe <Project>.uproject -run=AssetGraphServe [-IdleMinutes=30] [
 예: `/Game/Folder/BP_Thing` → `<Out>/Game/Folder/BP_Thing.json`
 
 전체 목록과 실패 내역은 `<Out>/index.json`에 기록됩니다.
+
+### 증분 내보내기 (`-Incremental`)
+
+`index.json`의 에셋마다 `key`가 적힙니다. 아래 중 하나라도 바뀌면 키가 바뀌고, `-Incremental`은 키가 같은 에셋만 건너뜁니다.
+
+- 에셋 파일의 저장 해시(엔진이 저장할 때 패키지에 기록하는 값, Asset Registry `GetPackageSavedHash`). 없으면 파일 크기와 수정 시각.
+- 이 에셋이 hard 의존하는 패키지 전부(끝까지 따라감)의 같은 값. 부모 BP나 나이아가라 모듈 스크립트가 바뀌어도 JSON이 바뀌기 때문입니다.
+- C++ 코드: 프로젝트 `Binaries/`, 프로젝트 `Plugins/`, 이 플러그인 폴더의 DLL 개수와 가장 최근 수정 시각. 다시 빌드하면 모든 에셋을 다시 내보냅니다.
+- 플러그인 버전, `schemaVersion`, `-Full`, 언어, 엔진 버전.
+
+전체 내보내기와 증분 내보내기의 결과 폴더는 같습니다(`index.json` 포함).
 
 - 키 순서는 고정되어 있습니다. 다시 내보낸 뒤 diff를 보면 바뀐 부분만 나타납니다.
 - GUID는 모두 `8-4-4-4-12` 형식입니다. 노드 링크, 바인딩, 전환 대상을 문자열 검색으로 서로 찾아갈 수 있습니다.

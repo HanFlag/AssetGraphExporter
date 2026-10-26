@@ -3,9 +3,13 @@
 #include "AssetGraphExportCommandlet.h"
 #include "AGEAssetQuery.h"
 #include "AGEAssetExporter.h"
+#include "AGEExportCache.h"
 #include "AGEExportContext.h"
 #include "AGELog.h"
+#include "Dom/JsonObject.h"
 #include "HAL/FileManager.h"
+#include "Serialization/JsonReader.h"
+#include "Serialization/JsonSerializer.h"
 #include "Misc/FileHelper.h"
 #include "Misc/PackageName.h"
 #include "Misc/Parse.h"
@@ -22,7 +26,7 @@
 namespace
 {
 	const TCHAR* Usage =
-		TEXT("Usage: -run=AssetGraphExport [-Assets=/Game/A,/Game/B] [-Path=/Game/Folder] [-Class=Blueprint,StateTree] [-Out=<dir>] [-Full]");
+		TEXT("Usage: -run=AssetGraphExport [-Assets=/Game/A,/Game/B] [-Path=/Game/Folder] [-Class=Blueprint,StateTree] [-Out=<dir>] [-Full] [-Incremental]");
 
 	/** Garbage is collected every N assets so a large -Path run does not keep every loaded asset in memory. */
 	constexpr int32 GarbageCollectInterval = 20;
@@ -71,6 +75,38 @@ namespace
 		}
 		return Values;
 	}
+
+	/** Asset entries of the index.json an earlier run left in the output folder, by object path. Empty when there is none. */
+	TMap<FString, TSharedPtr<FJsonObject>> ReadPreviousIndex(const FString& IndexPath)
+	{
+		TMap<FString, TSharedPtr<FJsonObject>> Entries;
+		FString Text;
+		TSharedPtr<FJsonObject> Index;
+		if (!FFileHelper::LoadFileToString(Text, *IndexPath) || !FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Text), Index) || !Index.IsValid())
+		{
+			return Entries;
+		}
+		const TArray<TSharedPtr<FJsonValue>>* Assets = nullptr;
+		if (Index->TryGetArrayField(TEXT("assets"), Assets))
+		{
+			for (const TSharedPtr<FJsonValue>& Value : *Assets)
+			{
+				const TSharedPtr<FJsonObject>* Entry = nullptr;
+				FString Asset;
+				if (Value->TryGetObject(Entry) && (*Entry)->TryGetStringField(TEXT("asset"), Asset))
+				{
+					Entries.Add(Asset, *Entry);
+				}
+			}
+		}
+		return Entries;
+	}
+
+	/** A file name an earlier index.json may name for deletion: a relative .json path that stays inside the output folder. */
+	bool IsOwnOutputFile(const FString& RelativePath)
+	{
+		return RelativePath.EndsWith(TEXT(".json")) && RelativePath != TEXT("index.json") && FPaths::IsRelative(RelativePath) && !RelativePath.Contains(TEXT(".."));
+	}
 }
 
 UAssetGraphExportCommandlet::UAssetGraphExportCommandlet()
@@ -92,6 +128,8 @@ int32 UAssetGraphExportCommandlet::Main(const FString& Params)
 	Query.Paths = ParseList(Params, TEXT("-Path="));
 	Query.Classes = ParseList(Params, TEXT("-Class="));
 	const bool bFull = FParse::Param(*Params, TEXT("Full"));
+	// Reuse the files of unchanged assets from the earlier run into the same -Out folder (keys in its index.json).
+	const bool bIncremental = FParse::Param(*Params, TEXT("Incremental"));
 
 	// Node titles, pin names and StateTree descriptions are generated in the current language. Fix it to English so
 	// exports from machines with different editor languages compare equal. An explicit engine -culture=/-language= wins.
@@ -126,19 +164,56 @@ int32 UAssetGraphExportCommandlet::Main(const FString& Params)
 	{
 		UE_LOG(LogAssetGraphExporter, Error, TEXT("%s"), *Error);
 	}
-	UE_LOG(LogAssetGraphExporter, Display, TEXT("Exporting %d asset(s) to %s"), Assets.Num(), *OutDir);
+	UE_LOG(LogAssetGraphExporter, Display, TEXT("Exporting %d asset(s) to %s%s"), Assets.Num(), *OutDir, bIncremental ? TEXT(" (incremental)") : TEXT(""));
+
+	const FString IndexPath = FPaths::Combine(OutDir, TEXT("index.json"));
+	const TMap<FString, TSharedPtr<FJsonObject>> PreviousEntries = bIncremental ? ReadPreviousIndex(IndexPath) : TMap<FString, TSharedPtr<FJsonObject>>();
+	FAGEExportCache Keys(bFull, Culture);
+	double TotalKeySeconds = 0.0;
+	int64 TotalKeyPackages = 0;
+	int32 Reused = 0;
 
 	TArray<TSharedPtr<FJsonValue>> IndexEntries;
+	TSet<FString> WrittenFiles;
 	int32 Failures = 0;
 	for (int32 Index = 0; Index < Assets.Num(); ++Index)
 	{
 		const FAssetData& AssetData = Assets[Index];
 		const FString RelativePath = RelativeOutputPath(AssetData);
+		const FString AssetPath = AssetData.GetSoftObjectPath().ToString();
+		WrittenFiles.Add(RelativePath);
+
+		const double KeyStart = FPlatformTime::Seconds();
+		int32 KeyPackages = 0;
+		const FString Key = Keys.AssetKey(AssetData, &KeyPackages);
+		TotalKeySeconds += FPlatformTime::Seconds() - KeyStart;
+		TotalKeyPackages += KeyPackages;
 
 		TSharedRef<FJsonObject> Entry = MakeShared<FJsonObject>();
-		Entry->SetStringField(TEXT("asset"), AssetData.GetSoftObjectPath().ToString());
+		Entry->SetStringField(TEXT("asset"), AssetPath);
 		Entry->SetStringField(TEXT("class"), AssetData.AssetClassPath.ToString());
 		Entry->SetStringField(TEXT("file"), RelativePath);
+		Entry->SetStringField(TEXT("key"), Key);
+
+		// Same key, same file name and an earlier success: the file on disk is what this run would write.
+		const TSharedPtr<FJsonObject>* Previous = PreviousEntries.Find(AssetPath);
+		FString PreviousKey, PreviousFile, PreviousStatus;
+		if (Previous && (*Previous)->TryGetStringField(TEXT("key"), PreviousKey) && PreviousKey == Key
+			&& (*Previous)->TryGetStringField(TEXT("file"), PreviousFile) && PreviousFile == RelativePath
+			&& (*Previous)->TryGetStringField(TEXT("status"), PreviousStatus) && PreviousStatus == TEXT("ok")
+			&& IFileManager::Get().FileExists(*FPaths::Combine(OutDir, RelativePath)))
+		{
+			int32 PreviousWarnings = 0;
+			if ((*Previous)->TryGetNumberField(TEXT("warnings"), PreviousWarnings))
+			{
+				Entry->SetNumberField(TEXT("warnings"), PreviousWarnings);
+			}
+			Entry->SetStringField(TEXT("status"), TEXT("ok"));
+			IndexEntries.Add(MakeShared<FJsonValueObject>(Entry));
+			++Reused;
+			UE_LOG(LogAssetGraphExporter, Display, TEXT("[%d/%d] %s (unchanged)"), Index + 1, Assets.Num(), *RelativePath);
+			continue;
+		}
 
 		FString Error;
 		const double LoadStart = FPlatformTime::Seconds();
@@ -202,10 +277,29 @@ int32 UAssetGraphExportCommandlet::Main(const FString& Params)
 	{
 		IndexJson->SetArrayField(TEXT("errors"), ToJsonStrings(Errors));
 	}
-	SaveJson(FPaths::Combine(OutDir, TEXT("index.json")), FAGEAssetExporter::ToJsonString(IndexJson));
+	SaveJson(IndexPath, FAGEAssetExporter::ToJsonString(IndexJson));
+
+	// Files of assets the earlier run had and this one does not (deleted, renamed, or no longer matched by the query).
+	// Only files that index named are touched.
+	int32 Removed = 0;
+	for (const TPair<FString, TSharedPtr<FJsonObject>>& Previous : PreviousEntries)
+	{
+		FString PreviousFile;
+		if (Previous.Value->TryGetStringField(TEXT("file"), PreviousFile) && !WrittenFiles.Contains(PreviousFile) && IsOwnOutputFile(PreviousFile)
+			&& IFileManager::Get().Delete(*FPaths::Combine(OutDir, PreviousFile), false, false, true))
+		{
+			++Removed;
+			UE_LOG(LogAssetGraphExporter, Display, TEXT("Removed %s (no longer exported)"), *PreviousFile);
+		}
+	}
 
 	UE_LOG(LogAssetGraphExporter, Display, TEXT("Done: %d exported, %d failed, %d query error(s)."), Assets.Num() - Failures, Failures, Errors.Num());
-	UE_LOG(LogAssetGraphExporter, Display, TEXT("[Timing] Load %.2f s, export %.2f s, commandlet total %.2f s (process total %.2f s)"),
+	if (bIncremental)
+	{
+		UE_LOG(LogAssetGraphExporter, Display, TEXT("Incremental: %d unchanged (reused), %d exported again, %d old file(s) removed."), Reused, Assets.Num() - Reused, Removed);
+	}
+	UE_LOG(LogAssetGraphExporter, Display, TEXT("[Timing] Keys %.2f s (%.1f packages per asset), load %.2f s, export %.2f s, commandlet total %.2f s (process total %.2f s)"),
+		TotalKeySeconds, Assets.Num() > 0 ? double(TotalKeyPackages) / Assets.Num() : 0.0,
 		TotalLoadSeconds, TotalExportSeconds, FPlatformTime::Seconds() - MainStart, FPlatformTime::Seconds() - GStartTime);
 	return (Failures > 0 || Errors.Num() > 0) ? 1 : 0;
 }

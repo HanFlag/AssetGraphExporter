@@ -9,7 +9,7 @@ namespace AGE
 {
 	/** Bumped when the JSON layout changes in a way readers must know about. */
 	inline constexpr int32 SchemaVersion = 2;
-	inline constexpr const TCHAR* ExporterVersion = TEXT("0.2.1");
+	inline constexpr const TCHAR* ExporterVersion = TEXT("0.2.2");
 
 	/** GUIDs are written as 8-4-4-4-12 hex everywhere so they can be matched across files. */
 	ASSETGRAPHEXPORTER_API FString GuidToString(const FGuid& Guid);

@@ -2,7 +2,7 @@
 
 Claude와 함께 Unreal을 쓸 때, Claude가 엔진 내장 Unreal MCP보다 나은 방식으로 에셋을 읽고, 고치고, 결과를 확인하게 하는 UE 5.8 에디터 플러그인입니다. 어느 프로젝트에나 넣어 씁니다.
 
-지금 버전(0.2.1)에는 에셋을 **에디터를 끈 상태에서도** 읽고 분석하는 기능이 들어 있습니다. 다음은 직접 고치고 실행해서 확인하는 기능입니다(확인 모드가 기본, 자동 모드 선택 가능).
+지금 버전(0.2.2)에는 에셋을 **에디터를 끈 상태에서도** 읽고 분석하는 기능이 들어 있습니다. 다음은 직접 고치고 실행해서 확인하는 기능입니다(확인 모드가 기본, 자동 모드 선택 가능).
 
 [릴리즈 받기](https://github.com/HanFlag/AssetGraphExporter/releases) · [AI용 안내](AssetGraphExporterMcp/Resources/AI_GUIDE.md) · [사용 안내](Documentation/Guide.md) · [JSON 스키마](Documentation/JsonSchema.md) · [변경 기록](CHANGELOG.md) · [로드맵](ROADMAP.md)
 
@@ -10,18 +10,17 @@ Claude와 함께 Unreal을 쓸 때, Claude가 엔진 내장 Unreal MCP보다 나
 
 이 도구는 Claude가 씁니다. 사람은 설치하고 연결한 뒤, Claude에게 말로 물으면 됩니다.
 
-1. **설치**: 릴리즈 zip을 풀어 `AssetGraphExporter`, `AssetGraphExporterMcp` 두 폴더를 `<프로젝트>/Plugins/`에 넣습니다.
-2. **서버 켜기**: 에디터를 열고 Project Settings > Plugins > Model Context Protocol > **Auto Start Server**를 켭니다.
-3. **연결**: 터미널에서 한 번 실행합니다.
+1. **설치**: 릴리즈 zip을 풀어 `AssetGraphExporter`, `AssetGraphExporterMcp` 두 폴더를 `<프로젝트>/Plugins/`에 넣고 에디터를 엽니다. 서버는 플러그인이 알아서 켭니다.
+2. **연결**: 터미널에서 한 번 실행합니다.
    ```
    claude mcp add --transport http unreal http://127.0.0.1:8000/mcp
    ```
-4. **시작**: Claude에게 "age_guide를 읽고 시작해 줘"라고 말합니다. 그다음부터는 그냥 물어보면 됩니다.
+3. **시작**: Claude에게 "age_guide를 읽고 시작해 줘"라고 말합니다. 그다음부터는 그냥 물어보면 됩니다.
    - "BP_Enemy가 하는 일 요약해 줘"
    - "이 C++ 함수 이름 바꾸면 어디가 깨져?"
    - "지난 커밋 이후 StateTree에서 뭐가 바뀌었어?"
 
-막히거나 에디터를 끈 채로 쓰고 싶으면, Claude에게 "`Plugins/AssetGraphExporterMcp/Resources/AI_GUIDE.md`를 읽고 도와줘"라고 하세요. 설치의 다른 방법과 모든 옵션은 [사용 안내](Documentation/Guide.md)에 있습니다.
+에디터를 끈 채로 쓰고 싶으면 Claude에게 "에디터 없이 쓸래"라고 하면 Claude가 켜 줍니다. 막히면 Claude에게 "`Plugins/AssetGraphExporterMcp/Resources/AI_GUIDE.md`를 읽고 도와줘"라고 하세요. 설치의 다른 방법과 모든 옵션은 [사용 안내](Documentation/Guide.md)에 있습니다.
 
 ## 왜 쓰나
 
@@ -52,8 +51,6 @@ Claude와 함께 Unreal을 쓸 때, Claude가 엔진 내장 Unreal MCP보다 나
 | `age_find_assets` · `age_get_asset` | 에셋 찾기, 구조 JSON 일부 꺼내기 |
 | `age_status` · `age_shutdown` | 상태 확인, 상주 서버 끄기 |
 | `age_guide` · `age_feedback` | AI가 처음 읽는 사용 안내, 문제 보고(내용이 채워진 GitHub 이슈 화면을 열어 사용자가 Submit) |
-
-MCP 없이 커맨드렛 하나로 파일에 내보낼 수도 있습니다: `UnrealEditor-Cmd.exe <Project>.uproject -run=AssetGraphExport -Path=/Game/Folder -Out=<폴더>`
 
 ## 요구 사항
 

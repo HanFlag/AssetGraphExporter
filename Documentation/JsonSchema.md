@@ -43,7 +43,7 @@
 ```jsonc
 {
   "schemaVersion": 2,
-  "exporter": { "name": "AssetGraphExporter", "version": "0.2.1", "diffOnly": true },
+  "exporter": { "name": "AssetGraphExporter", "version": "0.2.2", "diffOnly": true },
   "engineVersion": "5.8.4",
   "asset": { "path": "/Game/Folder/BP_Thing.BP_Thing", "class": "/Script/Engine.Blueprint" },
   "handler": "Blueprint",          // 전용 처리기 이름 (없으면 생략)

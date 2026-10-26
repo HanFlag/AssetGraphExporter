@@ -19,17 +19,28 @@ language; this file is in English only to keep it short.
 4. **Feedback**: this tool improves through its users' reports. When a tool fails or falls short you will prepare a
    report for them; they only review it and click Submit.
 
-## 2. Setup — walk the user through it if a step is missing
+## 2. Setup — the user does three steps; you do the technical parts
 
-1. Unzip the release into `<Project>/Plugins/` (folders `AssetGraphExporter` and `AssetGraphExporterMcp`). The release
-   zip has UE 5.8.4 Win64 binaries; other engine versions need a C++ project so the plugins build from source.
-2. Start the MCP server:
-   - With the editor open: Project Settings > Plugins > Model Context Protocol > **Auto Start Server**
-     (or the console command `ModelContextProtocol.StartServer`).
-   - With the editor closed: `UnrealEditor-Cmd.exe <Project>.uproject -run=AssetGraphServe`
-     (ready in about 11 s, up to a minute after a reboot; stops after 30 idle minutes or on `age_shutdown`).
-3. Connect: `claude mcp add --transport http unreal http://127.0.0.1:8000/mcp`
-4. Check: call `age_status`. Its first line says whether the editor or the background server is answering.
+The user only: (1) unzips the release into `<Project>/Plugins/` (folders `AssetGraphExporter` and
+`AssetGraphExporterMcp`) and opens the editor, (2) connects once, (3) asks you to start. Do everything else yourself
+and do not ask them to type engine commands.
+
+- **Server in the editor**: the plugin starts the Unreal MCP server by itself when the editor opens
+  (`http://127.0.0.1:8000/mcp`). It is off only if the editor was started with `-AGENoServerAutoStart`; then the
+  console command `ModelContextProtocol.StartServer` starts it.
+- **Connect**: `claude mcp add --transport http unreal http://127.0.0.1:8000/mcp` (once). You may run it for the user;
+  the tools appear after reconnecting or in a new session.
+- **Check**: call `age_status`. Its first line says whether the editor or the background server is answering.
+- **Editor closed**: when the user wants to work without the editor, start the background server yourself:
+  1. Find the project file (`*.uproject`) and its `EngineAssociation` value (e.g. `5.8`).
+  2. Find the engine folder: for a launcher install, registry `HKLM\SOFTWARE\EpicGames\Unreal Engine\<version>`,
+     value `InstalledDirectory`. For a source build the association is a GUID; ask the user for the engine folder.
+  3. Run it in the background (not in the foreground: it keeps running):
+     `"<Engine>\Engine\Binaries\Win64\UnrealEditor-Cmd.exe" "<Project>.uproject" -run=AssetGraphServe -unattended -nosplash -nullrhi`
+  4. It is ready in about 11 s (up to a minute after a reboot); call `age_status` until it answers.
+  5. It stops after 30 idle minutes, when an editor opens (the editor then serves), or on `age_shutdown`.
+     Call `age_shutdown` before the user builds C++ code: while it runs, the project's DLLs are locked.
+- The release zip has UE 5.8.4 Win64 binaries; other engine versions need a C++ project so the plugins build from source.
 
 ## 3. Which tool for which question
 

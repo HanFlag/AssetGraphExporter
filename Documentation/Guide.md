@@ -206,7 +206,7 @@ UnrealEditor-Cmd.exe <Project>.uproject -run=AssetGraphServe [-IdleMinutes=30] [
 ### 설치와 연결
 
 1. 두 플러그인을 설치합니다. 방법 A는 `AssetGraphExporter/`와 `AssetGraphExporterMcp/`를 함께 `<프로젝트>/Plugins/`에 복사, 방법 B는 `Scripts\Build.bat` 후 `Serve.bat` / `Editor.bat`(둘 다 `-PLUGIN=`으로 불러옴).
-2. 에디터 모드: Unreal MCP 서버가 켜져 있어야 합니다. 에디터 모드에서는 호출마다 약 0.33초가 걸렸습니다. `tools/list`도 같은 시간이 걸리므로, 도구 처리 시간이 아니라 에디터가 요청을 처리하는 프레임 간격으로 보입니다(에디터 창이 뒤에 있으면 프레임을 줄입니다). Project Settings > Plugins > Model Context Protocol의 Auto Start Server를 켜거나(엔진 로그가 안내하는 위치), 콘솔 명령 `ModelContextProtocol.StartServer`를 씁니다.
+2. 에디터 모드: 플러그인이 에디터가 열릴 때 Unreal MCP 서버를 스스로 켭니다(엔진의 사용자별 설정 "Auto Start Server"를 켤 필요 없음). 끄려면 에디터를 `-AGENoServerAutoStart`로 엽니다. 상주 서버가 막 꺼지는 중이라 포트가 잠깐 잡혀 있으면 2초 간격으로 다시 시도합니다(최대 15번). 에디터 모드에서는 호출마다 약 0.33초가 걸렸습니다. `tools/list`도 같은 시간이 걸리므로, 도구 처리 시간이 아니라 에디터가 요청을 처리하는 프레임 간격으로 보입니다(에디터 창이 뒤에 있으면 프레임을 줄입니다). 자동 켜기를 끈 경우에는 Project Settings > Plugins > Model Context Protocol의 Auto Start Server를 켜거나, 콘솔 명령 `ModelContextProtocol.StartServer`를 씁니다.
 3. Claude Code에 서버를 등록합니다: `claude mcp add --transport http unreal http://127.0.0.1:8000/mcp`
    (엔진 콘솔 명령 `ModelContextProtocol.GenerateClientConfig ClaudeCode`로 설정 파일을 만들 수도 있습니다.)
 

@@ -21,9 +21,10 @@ if not exist "%CORE%" goto :notbuilt
 if not exist "%MCP%" goto :notbuilt
 
 rem An editor serves the same port. Refuse now instead of after engine startup (the commandlet checks again later).
-echo %* | find /I "-IgnoreEditor" > nul
+rem Windows find/tasklist by full path: from Git Bash a Unix find comes first on PATH and the check silently did nothing.
+echo %* | "%SystemRoot%\System32\find.exe" /I "-IgnoreEditor" > nul
 if errorlevel 1 (
-	tasklist /FI "IMAGENAME eq UnrealEditor.exe" /NH 2> nul | find /I "UnrealEditor.exe" > nul
+	"%SystemRoot%\System32\tasklist.exe" /FI "IMAGENAME eq UnrealEditor.exe" /NH 2> nul | "%SystemRoot%\System32\find.exe" /I "UnrealEditor.exe" > nul
 	if not errorlevel 1 (
 		echo An Unreal Editor is running. Use the MCP server inside the editor instead; both would use the same port.
 		echo Pass -IgnoreEditor to start anyway.

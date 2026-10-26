@@ -116,6 +116,7 @@ Claude Code ──→ 127.0.0.1:8000/mcp
 |---|---|
 | `age_find_assets` | 이름(일부)·폴더·클래스로 에셋 찾기. 로드하지 않습니다. |
 | `age_references` | 참조 관계: 이 에셋이 쓰는 것(`uses`)과 이 에셋을 쓰는 것(`usedBy`). 한 줄에 경로, 클래스, `hard`(함께 로드)/`soft`(필요할 때 로드), 게임에 필요 없으면 `editor-only`. C++ 모듈(`/Script/...`)은 `native:` 한 줄로 모읍니다. `asset`에 `/Script/게임모듈`을 주면 그 모듈을 쓰는 에셋. `depth`(1~3)로 몇 단계까지 따라갈지. 에셋을 로드하지 않습니다(Asset Registry). |
+| `age_find_usages` | C++ 클래스·UFUNCTION·UPROPERTY의 사용처. 멤버는 그것을 부르는(읽는·쓰는·덮어쓰는·바인딩하는) 그래프 노드를 한 줄씩(그래프, 노드 종류, 제목), 클래스는 JSON에서 그 클래스 경로가 나오는 모든 곳(부모 클래스, 캐스트, 핀 타입, 클래스 기본값). `symbol` 예: `GameplayAbility::GetAvatarActorFromActorInfo`, `ACharacter.JumpMaxCount`, `UGameplayAbility`. `path` 아래 BP는 전부, 그 밖의 에셋은 그 C++ 모듈에 의존하는 것만 찾고, 맵과 월드 파티션 레벨의 액터 패키지는 건너뜁니다. 아래 [사용처 찾기 캐시](#사용처-찾기-캐시) 참고. |
 | `age_get_asset` | 위 JSON 스키마 그대로(공백 없는 JSON). `select`로 일부만 받습니다. 예: `stateTree.bindings`, `blueprint.graphs[EventGraph]`, `blueprint.graphs[0].nodes[3]`. 결과가 `maxChars`(기본 40000자)보다 길면 대신 목차(경로, 항목 수, 크기)를 돌려줍니다. |
 | `age_statetree_overview` | 상태 트리 요약: 상태 계층, 진입 조건, 태스크, 전환(대상, 트리거, 조건)을 한 줄씩 |
 | `age_statetree_bindings` | 바인딩을 `원본 -> 대상` 한 줄씩. `filter`로 거르기 |
@@ -163,6 +164,14 @@ used by (2):
   /Game/MyStuff/EnemyAI/ST_Boss  [StateTree]  hard
   /Game/MyStuff/EnemyCharacter/BP_SteampunkCat1  [Blueprint]  hard
 ```
+
+### 사용처 찾기 캐시
+
+`age_find_usages`는 후보 에셋을 한 번 내보내 캐시 폴더에 두고, 다음부터는 바뀐 에셋만 다시 내보냅니다(커맨드렛 `-Incremental`과 같은 키, 같은 폴더 형식).
+
+- 위치: `<프로젝트>/Saved/AssetGraphExporter/Cache`. 실행 인자 `-AGECacheDir=<폴더>`로 바꿉니다(예: `Serve.bat -AGECacheDir=D:\AgeCache`).
+- 처음 검색은 후보를 모두 로드하므로 오래 걸릴 수 있고, 그동안 서버(에디터 모드에서는 에디터)가 멈춥니다. 커맨드렛으로 미리 채울 수 있습니다: `Export.bat -Path=/Game -Class=Blueprint -Out=<캐시 폴더> -Incremental`. 단, 커맨드렛 `-Incremental`은 그 질의에 없는 에셋의 파일을 지우므로 캐시에는 넓은 질의로만 쓰세요. 언어가 다르면(커맨드렛은 `en`) 키가 달라 다시 내보냅니다.
+- 에디터 모드에서 저장하지 않은 변경이 있는 에셋은 캐시를 쓰지 않고 메모리에서 바로 읽습니다(캐시에 쓰지 않음).
 
 ### 활동 창 (Claude가 MCP로 한 일 보기)
 
@@ -479,6 +488,8 @@ UE 5.8은 이 정보를 노드의 `Binding` 객체(`UAnimGraphNodeBinding_Base::
 - 상주 서버의 "다시 저장된 에셋 다시 읽기"는 아직 실제로 시험하지 않았습니다(시험하려면 `Content/` 파일을 바꿔야 해서).
 - 상주 서버는 요청받은 에셋의 패키지만 다시 읽습니다. 그 에셋이 참조하는 다른 에셋(예: 부모 BP)이 바뀐 경우, 그것이 메모리에서 정리(2분마다)되거나 직접 요청될 때까지 예전 값이 섞일 수 있습니다.
 - `age_references`는 디스크에 저장된 내용 기준입니다(Asset Registry). 에디터에서 저장하지 않은 변경은 반영되지 않습니다.
+- `age_find_usages`가 찾지 않는 곳: 구조체 Break/Make 노드의 멤버, AnimBP 프로퍼티 액세스 바인딩 문자열 안의 멤버 경로, 맵(레벨 블루프린트). `MemberParent`가 로드되지 않은 BP 클래스인 노드는 판정하지 못해 빠집니다.
+- Asset Registry의 C++ 모듈 의존은 빠진 것이 있습니다(5.8로 저장한 시험 에셋에서 `/Script/Engine`, `/Script/CoreUObject` 의존이 기록되지 않음). 그래서 `age_references`의 `native:` 줄과 `/Script/...` 사용처는 전부가 아닐 수 있고, `age_find_usages`는 BP를 모듈 의존과 상관없이 모두 찾습니다.
 - 실행 흐름 요약에서 순수 노드는 쓰일 때마다 식으로 다시 펼쳐집니다(같은 `TryGetPawnOwner()`가 여러 줄에 나올 수 있음).
 - `variables[].default`는 CDO 값입니다. CDO에 그 변수가 없으면(예: 변수를 추가한 뒤 컴파일하지 않음) `FBPVariableDescription::DefaultValue` 문자열을 대신 씁니다. 시험한 에셋에서는 이 문자열이 모두 비어 있었습니다.
 - 나이아가라: 경량(Stateless) 이미터는 범용 리플렉션으로만 씁니다. 스크래치 패드 모듈은 이름만 스택에 나오고, 내용은 `graphs`에 있습니다. `defaults`는 이름만 있고 값은 없습니다(모듈 에셋 쪽 기본값).

@@ -3,11 +3,13 @@
 #include "AGEMcpTools.h"
 #include "AGEAssetQuery.h"
 #include "AGEAssetExporter.h"
+#include "AGEExportCache.h"
 #include "AGEExportContext.h"
 #include "AGEJsonQuery.h"
 #include "AGEMcpActivity.h"
 #include "AGEMcpState.h"
 #include "AGESummary.h"
+#include "AGEUsages.h"
 #include "IModelContextProtocolTool.h"
 #include "ModelContextProtocolToolResults.h"
 #include "AssetRegistry/AssetData.h"
@@ -17,12 +19,20 @@
 #include "Dom/JsonValue.h"
 #include "HAL/FileManager.h"
 #include "HAL/PlatformTime.h"
+#include "Internationalization/Culture.h"
+#include "Internationalization/Internationalization.h"
 #include "Misc/App.h"
 #include "Misc/AssetRegistryInterface.h"
+#include "Misc/CommandLine.h"
 #include "Misc/DateTime.h"
 #include "Misc/EngineVersion.h"
+#include "Misc/FileHelper.h"
 #include "Misc/PackageName.h"
+#include "Misc/Parse.h"
+#include "Misc/Paths.h"
 #include "PackageTools.h"
+#include "Serialization/JsonReader.h"
+#include "Serialization/JsonSerializer.h"
 #include "UObject/Package.h"
 #include "UObject/UObjectGlobals.h"
 
@@ -569,6 +579,188 @@ namespace AGE::McpToolsDetail
 		return TextResult(FString::Join(Lines, TEXT("\n")));
 	}
 
+	// ---- Usages ----
+
+	/** Folder age_find_usages exports into and reuses: -AGECacheDir=<dir> on the command line, else <Project>/Saved/AssetGraphExporter/Cache. */
+	FString UsageCacheDir()
+	{
+		FString Dir;
+		if (!FParse::Value(FCommandLine::Get(), TEXT("AGECacheDir="), Dir))
+		{
+			Dir = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("AssetGraphExporter"), TEXT("Cache"));
+		}
+		return FPaths::ConvertRelativePathToFull(FPaths::ProjectDir(), Dir);
+	}
+
+	TSharedPtr<FJsonObject> ReadJsonFile(const FString& Filename)
+	{
+		FString Text;
+		TSharedPtr<FJsonObject> Json;
+		if (FFileHelper::LoadFileToString(Text, *Filename))
+		{
+			FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Text), Json);
+		}
+		return Json;
+	}
+
+	FModelContextProtocolToolResult FindUsages(const FJsonObject& Arguments)
+	{
+		FAGEUsageSymbol Symbol;
+		FString SymbolError;
+		if (!AGE::Usages::ResolveSymbol(StringArgument(Arguments, TEXT("symbol")), Symbol, SymbolError))
+		{
+			return ErrorResult(SymbolError);
+		}
+		FString Path = StringArgument(Arguments, TEXT("path"));
+		if (Path.IsEmpty())
+		{
+			Path = TEXT("/Game");
+		}
+		Path.RemoveFromEnd(TEXT("/"));
+		const int32 Limit = FMath::Clamp(IntArgument(Arguments, TEXT("limit"), DefaultReferenceLimit), 1, MaxReferenceLimit);
+		const double Start = FPlatformTime::Seconds();
+
+		IAssetRegistry& AssetRegistry = IAssetRegistry::GetChecked();
+		if (AGE::Mcp::IsServeMode())
+		{
+			AssetRegistry.SearchAllAssets(true);
+		}
+
+		// Every Blueprint under the path: the registry's dependencies on C++ modules are incomplete (in tested assets saved with 5.8,
+		// /Script/Engine and /Script/CoreUObject were missing although the graphs call their functions), and member uses live in graphs.
+		FAGEAssetQuery BlueprintQuery;
+		BlueprintQuery.Paths.Add(Path);
+		BlueprintQuery.Classes.Add(TEXT("Blueprint"));
+		BlueprintQuery.bRescan = false;
+		TArray<FString> QueryErrors;
+		TArray<FAssetData> Candidates = AGE::CollectAssets(BlueprintQuery, QueryErrors);
+		const int32 BlueprintCount = Candidates.Num();
+
+		// Other assets only when the registry says they depend on the module. Maps are skipped (loading a level is slow), and so are
+		// actors a World Partition level keeps in their own packages: they are not top-level assets and do not load on their own.
+		TSet<FSoftObjectPath> Known;
+		for (const FAssetData& Candidate : Candidates)
+		{
+			Known.Add(Candidate.GetSoftObjectPath());
+		}
+		TArray<FName> Referencers;
+		AssetRegistry.GetReferencers(Symbol.ModulePackage, Referencers, UE::AssetRegistry::EDependencyCategory::Package);
+		const FTopLevelAssetPath WorldClass(TEXT("/Script/Engine.World"));
+		int32 SkippedMaps = 0;
+		for (const FName Referencer : Referencers)
+		{
+			if (!Referencer.ToString().StartsWith(Path + TEXT("/")))
+			{
+				continue;
+			}
+			TArray<FAssetData> Assets;
+			AssetRegistry.GetAssetsByPackageName(Referencer, Assets, true);
+			for (const FAssetData& Asset : Assets)
+			{
+				if (Asset.AssetClassPath == WorldClass || !Asset.IsTopLevelAsset())
+				{
+					++SkippedMaps;
+				}
+				else if (!Known.Contains(Asset.GetSoftObjectPath()))
+				{
+					Candidates.Add(Asset);
+				}
+			}
+		}
+		Candidates.Sort([](const FAssetData& A, const FAssetData& B) { return A.GetSoftObjectPath().ToString() < B.GetSoftObjectPath().ToString(); });
+
+		// In the editor, assets with unsaved changes are read from memory and not written to the cache.
+		TArray<FAssetData> FromCache;
+		TArray<FAssetData> Unsaved;
+		for (const FAssetData& Candidate : Candidates)
+		{
+			const UPackage* Package = AGE::Mcp::IsServeMode() ? nullptr : FindPackage(nullptr, *Candidate.PackageName.ToString());
+			(Package && Package->IsDirty() ? Unsaved : FromCache).Add(Candidate);
+		}
+
+		FAGEExportRun Run;
+		Run.OutDir = UsageCacheDir();
+		Run.bReuse = true;
+		Run.Culture = FInternationalization::Get().GetCurrentLanguage()->GetName();
+		Run.Load = [](const FAssetData& Data) -> UObject*
+		{
+			if (AGE::Mcp::IsServeMode())
+			{
+				RefreshFromDisk(Data);
+			}
+			return Data.GetAsset();
+		};
+		AGE::ExportCache::Export(FromCache, Run);
+
+		// The cache's index keeps every asset any search exported, not only this search's candidates.
+		TMap<FString, TSharedPtr<FJsonObject>> Entries = Run.PreviousEntries;
+		for (const TSharedPtr<FJsonValue>& Value : Run.Entries)
+		{
+			Entries.Add(Value->AsObject()->GetStringField(TEXT("asset")), Value->AsObject());
+		}
+		Entries.KeySort(TLess<FString>());
+		TArray<TSharedPtr<FJsonValue>> IndexAssets;
+		for (const TPair<FString, TSharedPtr<FJsonObject>>& Entry : Entries)
+		{
+			IndexAssets.Add(MakeShared<FJsonValueObject>(Entry.Value));
+		}
+		const TSharedRef<FJsonObject> IndexJson = MakeShared<FJsonObject>();
+		IndexJson->SetNumberField(TEXT("schemaVersion"), AGE::SchemaVersion);
+		IndexJson->SetArrayField(TEXT("assets"), IndexAssets);
+		AGE::ExportCache::SaveJson(FPaths::Combine(Run.OutDir, TEXT("index.json")), FAGEAssetExporter::ToJsonString(IndexJson));
+
+		TArray<FString> Found;
+		int32 Uses = 0;
+		int32 AssetsWithUses = 0;
+		auto AddUses = [&](const FAssetData& Asset, const TArray<FString>& AssetLines)
+		{
+			if (!AssetLines.IsEmpty())
+			{
+				++AssetsWithUses;
+				Uses += AssetLines.Num();
+				Found.Add(FString::Printf(TEXT("  %s  [%s]"), *Asset.PackageName.ToString(), *Asset.AssetClassPath.GetAssetName().ToString()));
+				for (const FString& Line : AssetLines)
+				{
+					Found.Add(TEXT("    ") + Line);
+				}
+			}
+		};
+		for (int32 Index = 0; Index < FromCache.Num(); ++Index)
+		{
+			FString Status;
+			Run.Entries[Index]->AsObject()->TryGetStringField(TEXT("status"), Status);
+			const TSharedPtr<FJsonObject> Export = Status == TEXT("ok")
+				? ReadJsonFile(FPaths::Combine(Run.OutDir, AGE::ExportCache::RelativeOutputPath(FromCache[Index]))) : nullptr;
+			if (Export.IsValid())
+			{
+				AddUses(FromCache[Index], AGE::Usages::FindInExport(*Export, Symbol));
+			}
+		}
+		for (const FAssetData& Asset : Unsaved)
+		{
+			if (const UObject* Object = Asset.GetAsset())
+			{
+				AddUses(Asset, AGE::Usages::FindInExport(*ExportAsset(*Object, false), Symbol));
+			}
+		}
+
+		TArray<FString> Lines;
+		Lines.Add(FString::Printf(TEXT("source: saved files through the cache %s (%d reused, %d exported, %d failed, %.1f s)%s"),
+			*Run.OutDir, Run.Reused, FromCache.Num() - Run.Reused, Run.Failures, FPlatformTime::Seconds() - Start,
+			Unsaved.IsEmpty() ? TEXT("") : *FString::Printf(TEXT("; %d asset(s) with unsaved changes read from the editor"), Unsaved.Num())));
+		Lines.Add(TEXT("symbol: ") + Symbol.Describe());
+		Lines.Add(FString::Printf(TEXT("searched: %d Blueprint(s) under %s, plus %d other asset(s) that depend on %s%s"), BlueprintCount, *Path,
+			Candidates.Num() - BlueprintCount, *Symbol.ModulePackage.ToString(), SkippedMaps > 0 ? *FString::Printf(TEXT(" (%d map(s) and level actor(s) skipped)"), SkippedMaps) : TEXT("")));
+		Lines.Add(Uses > 0 ? FString::Printf(TEXT("found %d use(s) in %d asset(s):"), Uses, AssetsWithUses) : FString(TEXT("no uses found")));
+		const int32 Shown = FMath::Min(Found.Num(), FMath::Max(Limit - Lines.Num(), 0));
+		Lines.Append(Found.GetData(), Shown);
+		if (Found.Num() > Shown)
+		{
+			Lines.Add(FString::Printf(TEXT("... %d more lines. Narrow 'path' or raise limit."), Found.Num() - Shown));
+		}
+		return TextResult(FString::Join(Lines, TEXT("\n")));
+	}
+
 	FModelContextProtocolToolResult Status(const FJsonObject& Arguments)
 	{
 		TArray<FString> Lines;
@@ -633,6 +825,20 @@ TArray<TSharedRef<IModelContextProtocolTool>> AGE::Mcp::CreateTools()
 			.Add(TEXT("limit"), TEXT("integer"), TEXT("Maximum lines, default 200, at most 2000."))
 			.Build(),
 		&References));
+
+	Tools.Add(MakeShared<FTool>(TEXT("age_find_usages"),
+		TEXT("Where Blueprints and other assets use a C++ class, UFUNCTION or UPROPERTY. "
+			"For a member: every graph node that calls the function, gets or sets the property, overrides the event or binds the delegate, "
+			"on the declaring class or a subclass (calls on self are judged by the Blueprint's native parent class); one line per node: graph, node type and title. "
+			"For a class: every place the exported JSON names it (parent class, casts, pin types, class defaults). "
+			"Every Blueprint under 'path' is searched, plus other assets that depend on the class's C++ module; maps and their actors are skipped. "
+			"Assets are exported once into a cache folder and re-exported only when they or their dependencies change, so the first search over many assets is slow."),
+		FSchema()
+			.Add(TEXT("symbol"), TEXT("string"), TEXT("Class::Member or Class.Member, e.g. GameplayAbility::GetAvatarActorFromActorInfo or ACharacter.JumpMaxCount; or a class alone, e.g. UGameplayAbility or /Script/MyGame.MyActor."), true)
+			.Add(TEXT("path"), TEXT("string"), TEXT("Folder searched recursively. Default /Game."))
+			.Add(TEXT("limit"), TEXT("integer"), TEXT("Maximum lines, default 200, at most 2000."))
+			.Build(),
+		&FindUsages));
 
 	Tools.Add(MakeShared<FTool>(TEXT("age_get_asset"),
 		TEXT("Structure of one asset as compact JSON: properties, Blueprint variables/components/graphs (nodes, pins, links), AnimBP bindings, StateTree states and bindings, Niagara emitters and stacks. "

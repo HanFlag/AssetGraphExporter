@@ -102,6 +102,7 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
 const TOOL_LABELS = {
   age_find_assets: "에셋 찾기",
   age_references: "참조 관계",
+  age_find_usages: "사용처 찾기",
   age_get_asset: "에셋 구조 읽기",
   age_blueprint_overview: "블루프린트 요약",
   age_statetree_overview: "StateTree 요약",
@@ -139,6 +140,7 @@ function targetText(entry) {
   const a = entry.args || {};
   const parts = [];
   if (a.asset) parts.push(shortAsset(a.asset));
+  if (a.symbol) parts.push(a.symbol);
   if (a.select) parts.push("· " + a.select);
   if (a.name) parts.push("이름에 \"" + a.name + "\"");
   if (a.class) parts.push("클래스 " + a.class);

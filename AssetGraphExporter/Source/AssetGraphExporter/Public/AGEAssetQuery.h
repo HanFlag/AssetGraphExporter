@@ -5,6 +5,8 @@
 #include "CoreMinimal.h"
 #include "AssetRegistry/AssetData.h"
 
+class UClass;
+
 /** Which assets to work on: what the commandlet gets on its command line, or what an MCP tool gets as arguments. */
 struct FAGEAssetQuery
 {
@@ -25,4 +27,7 @@ namespace AGE
 {
 	/** Resolves the query through the Asset Registry without loading the assets. Sorted by object path. Problems are appended to OutErrors. */
 	ASSETGRAPHEXPORTER_API TArray<FAssetData> CollectAssets(const FAGEAssetQuery& Query, TArray<FString>& OutErrors);
+
+	/** A class by short name (GameplayAbility, also UGameplayAbility / AActor) or full path (/Script/Engine.Actor, /Game/BP_Base.BP_Base_C). Null if none. */
+	ASSETGRAPHEXPORTER_API UClass* ResolveClass(const FString& Name);
 }

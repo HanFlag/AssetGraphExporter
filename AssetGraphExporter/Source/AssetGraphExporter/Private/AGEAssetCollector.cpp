@@ -6,23 +6,23 @@
 #include "AssetRegistry/IAssetRegistry.h"
 #include "Misc/PackageName.h"
 
+UClass* AGE::ResolveClass(const FString& Name)
+{
+	if (Name.Contains(TEXT("/")))
+	{
+		return LoadObject<UClass>(nullptr, *Name);
+	}
+	UClass* Class = FindFirstObject<UClass>(*Name, EFindFirstObjectOptions::NativeFirst);
+	// Accept C++ spellings too: UGameplayAbility, AActor.
+	if (!Class && Name.Len() > 1 && (Name[0] == TEXT('U') || Name[0] == TEXT('A')))
+	{
+		Class = FindFirstObject<UClass>(*Name.RightChop(1), EFindFirstObjectOptions::NativeFirst);
+	}
+	return Class;
+}
+
 namespace
 {
-	UClass* ResolveClass(const FString& Name)
-	{
-		if (Name.Contains(TEXT("/")))
-		{
-			return LoadObject<UClass>(nullptr, *Name);
-		}
-		UClass* Class = FindFirstObject<UClass>(*Name, EFindFirstObjectOptions::NativeFirst);
-		// Accept C++ spellings too: UGameplayAbility, AActor.
-		if (!Class && Name.Len() > 1 && (Name[0] == TEXT('U') || Name[0] == TEXT('A')))
-		{
-			Class = FindFirstObject<UClass>(*Name.RightChop(1), EFindFirstObjectOptions::NativeFirst);
-		}
-		return Class;
-	}
-
 	bool IsChildOfAny(const UClass* Class, const TArray<UClass*>& Classes)
 	{
 		if (!Class)
@@ -97,7 +97,7 @@ TArray<FAssetData> AGE::CollectAssets(const FAGEAssetQuery& Query, TArray<FStrin
 	TArray<UClass*> Classes;
 	for (const FString& ClassName : Query.Classes)
 	{
-		if (UClass* Class = ResolveClass(ClassName))
+		if (UClass* Class = AGE::ResolveClass(ClassName))
 		{
 			Classes.Add(Class);
 		}

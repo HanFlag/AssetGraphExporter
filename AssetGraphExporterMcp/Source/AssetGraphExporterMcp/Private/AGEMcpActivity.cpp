@@ -400,7 +400,7 @@ void AGE::Mcp::Activity::RecordToolCall(const FString& Tool, const FJsonObject& 
 
 	// Only short text arguments; nothing the page does not show.
 	const TSharedRef<FJsonObject> Shown = MakeShared<FJsonObject>();
-	for (const TCHAR* Key : { TEXT("asset"), TEXT("select"), TEXT("name"), TEXT("path"), TEXT("class"), TEXT("filter") })
+	for (const TCHAR* Key : { TEXT("asset"), TEXT("symbol"), TEXT("select"), TEXT("name"), TEXT("path"), TEXT("class"), TEXT("filter") })
 	{
 		FString Value;
 		if (Arguments.TryGetStringField(Key, Value) && !Value.TrimStartAndEnd().IsEmpty())

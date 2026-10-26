@@ -10,11 +10,15 @@
 #include "AGESummary.h"
 #include "IModelContextProtocolTool.h"
 #include "ModelContextProtocolToolResults.h"
+#include "AssetRegistry/AssetData.h"
+#include "AssetRegistry/AssetIdentifier.h"
+#include "AssetRegistry/IAssetRegistry.h"
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
 #include "HAL/FileManager.h"
 #include "HAL/PlatformTime.h"
 #include "Misc/App.h"
+#include "Misc/AssetRegistryInterface.h"
 #include "Misc/DateTime.h"
 #include "Misc/EngineVersion.h"
 #include "Misc/PackageName.h"
@@ -29,6 +33,9 @@ namespace AGE::McpToolsDetail
 	constexpr int32 DefaultMaxChars = 40000;
 	constexpr int32 DefaultFindLimit = 100;
 	constexpr int32 MaxFindLimit = 1000;
+	constexpr int32 DefaultReferenceLimit = 200;
+	constexpr int32 MaxReferenceLimit = 2000;
+	constexpr int32 MaxReferenceDepth = 3;
 
 	using FToolFunction = TFunction<FModelContextProtocolToolResult(const FJsonObject& Arguments)>;
 
@@ -379,6 +386,189 @@ namespace AGE::McpToolsDetail
 		});
 	}
 
+	// ---- References ----
+
+	/** Direct package dependencies (or referencers) of one package, sorted by name, with the properties of all links to each package combined. */
+	TMap<FName, UE::AssetRegistry::EDependencyProperty> DirectLinks(const IAssetRegistry& AssetRegistry, FName PackageName, bool bReferencers)
+	{
+		TArray<FAssetDependency> Links;
+		const FAssetIdentifier Id(PackageName);
+		if (bReferencers)
+		{
+			AssetRegistry.GetReferencers(Id, Links, UE::AssetRegistry::EDependencyCategory::Package);
+		}
+		else
+		{
+			AssetRegistry.GetDependencies(Id, Links, UE::AssetRegistry::EDependencyCategory::Package);
+		}
+
+		TMap<FName, UE::AssetRegistry::EDependencyProperty> Result;
+		for (const FAssetDependency& Link : Links)
+		{
+			if (Link.AssetId.PackageName != PackageName)
+			{
+				Result.FindOrAdd(Link.AssetId.PackageName) |= Link.Properties;
+			}
+		}
+		Result.KeySort(FNameLexicalLess());
+		return Result;
+	}
+
+	/** Class of the package's main asset (the one named like the package), or of its first asset. */
+	FString PackageClass(const IAssetRegistry& AssetRegistry, FName PackageName)
+	{
+		TArray<FAssetData> Assets;
+		AssetRegistry.GetAssetsByPackageName(PackageName, Assets, true);
+		if (Assets.IsEmpty())
+		{
+			return TEXT("not found");
+		}
+		const FName ShortName(FPackageName::GetShortName(PackageName));
+		const FAssetData* Main = Assets.FindByPredicate([ShortName](const FAssetData& Asset) { return Asset.AssetName == ShortName; });
+		return (Main ? *Main : Assets[0]).AssetClassPath.GetAssetName().ToString();
+	}
+
+	FString LinkText(UE::AssetRegistry::EDependencyProperty Properties)
+	{
+		FString Text = EnumHasAnyFlags(Properties, UE::AssetRegistry::EDependencyProperty::Hard) ? TEXT("hard") : TEXT("soft");
+		if (!EnumHasAnyFlags(Properties, UE::AssetRegistry::EDependencyProperty::Game))
+		{
+			Text += TEXT(", editor-only");
+		}
+		return Text;
+	}
+
+	/** Writes one direction of age_references as an indented tree; packages already written are only named again. */
+	struct FReferenceTree
+	{
+		const IAssetRegistry& AssetRegistry;
+		bool bReferencers = false;
+		int32 MaxDepth = 1;
+		int32 MaxLines = DefaultReferenceLimit;
+		TArray<FString>& Lines;
+		int32 CutLines = 0;
+		TSet<FName> Listed;
+
+		void Add(FString Line)
+		{
+			if (Lines.Num() < MaxLines)
+			{
+				Lines.Add(MoveTemp(Line));
+			}
+			else
+			{
+				++CutLines;
+			}
+		}
+
+		void Write(FName PackageName, int32 Depth)
+		{
+			const FString Indent = FString::ChrN(Depth * 2, TEXT(' '));
+			TArray<FString> Native;
+			for (const TPair<FName, UE::AssetRegistry::EDependencyProperty>& Link : DirectLinks(AssetRegistry, PackageName, bReferencers))
+			{
+				const FString Name = Link.Key.ToString();
+				// C++ modules go on one line: otherwise /Script/Engine and the like push the assets out of view.
+				if (FPackageName::IsScriptPackage(Name))
+				{
+					Native.Add(Name);
+					continue;
+				}
+				bool bAlreadyListed = false;
+				Listed.Add(Link.Key, &bAlreadyListed);
+				Add(FString::Printf(TEXT("%s%s  [%s]  %s%s"), *Indent, *Name, *PackageClass(AssetRegistry, Link.Key), *LinkText(Link.Value),
+					bAlreadyListed ? TEXT("  (listed above)") : TEXT("")));
+				if (!bAlreadyListed && Depth < MaxDepth)
+				{
+					Write(Link.Key, Depth + 1);
+				}
+			}
+			if (!Native.IsEmpty())
+			{
+				Add(Indent + TEXT("native: ") + FString::Join(Native, TEXT(", ")));
+			}
+		}
+	};
+
+	FModelContextProtocolToolResult References(const FJsonObject& Arguments)
+	{
+		const FString AssetArgument = StringArgument(Arguments, TEXT("asset"));
+		if (AssetArgument.IsEmpty())
+		{
+			return ErrorResult(TEXT("'asset' is required, e.g. /Game/Folder/BP_Thing or /Script/ModuleName. Use age_find_assets to look up paths."));
+		}
+		FString Direction = StringArgument(Arguments, TEXT("direction")).ToLower();
+		if (Direction.IsEmpty())
+		{
+			Direction = TEXT("both");
+		}
+		if (Direction != TEXT("both") && Direction != TEXT("uses") && Direction != TEXT("usedby"))
+		{
+			return ErrorResult(TEXT("'direction' must be uses, usedBy or both."));
+		}
+		const int32 MaxDepth = FMath::Clamp(IntArgument(Arguments, TEXT("depth"), 1), 1, MaxReferenceDepth);
+		const int32 Limit = FMath::Clamp(IntArgument(Arguments, TEXT("limit"), DefaultReferenceLimit), 1, MaxReferenceLimit);
+
+		IAssetRegistry& AssetRegistry = IAssetRegistry::GetChecked();
+		if (AGE::Mcp::IsServeMode())
+		{
+			// Pick up files saved since the last scan, as age_find_assets does. The editor keeps the registry current itself.
+			AssetRegistry.SearchAllAssets(true);
+		}
+
+		FName PackageName;
+		FString Title;
+		if (FPackageName::IsScriptPackage(AssetArgument))
+		{
+			PackageName = FName(*AssetArgument);
+			Title = AssetArgument + TEXT("  [native module]");
+		}
+		else
+		{
+			FAGEAssetQuery Query;
+			Query.Assets.Add(AssetArgument);
+			Query.bRescan = false;
+			TArray<FString> Errors;
+			const TArray<FAssetData> Found = AGE::CollectAssets(Query, Errors);
+			if (Found.IsEmpty())
+			{
+				return ErrorResult(FString::Printf(TEXT("Asset not found: %s. Use age_find_assets to look up paths."), *AssetArgument));
+			}
+			PackageName = Found[0].PackageName;
+			Title = FString::Printf(TEXT("%s  [%s]"), *PackageName.ToString(), *Found[0].AssetClassPath.GetAssetName().ToString());
+		}
+
+		TArray<FString> Lines;
+		Lines.Add(TEXT("source: asset registry (saved files; unsaved editor changes are not included)"));
+		Lines.Add(Title);
+		int32 CutLines = 0;
+		for (const bool bReferencers : { false, true })
+		{
+			if (Direction != TEXT("both") && Direction != (bReferencers ? TEXT("usedby") : TEXT("uses")))
+			{
+				continue;
+			}
+			int32 Direct = 0;
+			int32 Native = 0;
+			for (const TPair<FName, UE::AssetRegistry::EDependencyProperty>& Link : DirectLinks(AssetRegistry, PackageName, bReferencers))
+			{
+				++(FPackageName::IsScriptPackage(Link.Key.ToString()) ? Native : Direct);
+			}
+			Lines.Add(FString::Printf(TEXT("%s (%d%s):"), bReferencers ? TEXT("used by") : TEXT("uses"), Direct,
+				Native > 0 ? *FString::Printf(TEXT(" + %d native modules"), Native) : TEXT("")));
+
+			FReferenceTree Tree{ AssetRegistry, bReferencers, MaxDepth, Limit, Lines };
+			Tree.Listed.Add(PackageName);
+			Tree.Write(PackageName, 1);
+			CutLines += Tree.CutLines;
+		}
+		if (CutLines > 0)
+		{
+			Lines.Add(FString::Printf(TEXT("... %d more lines. Raise limit, lower depth or pick one direction."), CutLines));
+		}
+		return TextResult(FString::Join(Lines, TEXT("\n")));
+	}
+
 	FModelContextProtocolToolResult Status(const FJsonObject& Arguments)
 	{
 		TArray<FString> Lines;
@@ -430,6 +620,19 @@ TArray<TSharedRef<IModelContextProtocolTool>> AGE::Mcp::CreateTools()
 			.Add(TEXT("limit"), TEXT("integer"), TEXT("Maximum lines, default 100, at most 1000."))
 			.Build(),
 		&FindAssets));
+
+	Tools.Add(MakeShared<FTool>(TEXT("age_references"),
+		TEXT("What an asset uses and what uses it, from the Asset Registry without loading anything (saved files only). "
+			"One line per package: path, class, and 'hard' (loaded with it) or 'soft' (loaded on demand), plus 'editor-only' when the game does not need it. "
+			"C++ modules (/Script/...) are gathered on one 'native:' line. Pass a module such as /Script/MyGame as 'asset' to see which assets use it. "
+			"With depth > 1 each package's own links are indented under it; a package already written is marked (listed above)."),
+		FSchema()
+			.Add(TEXT("asset"), TEXT("string"), TEXT("Asset path, e.g. /Game/Folder/BP_Thing, or a C++ module, e.g. /Script/MyGame."), true)
+			.Add(TEXT("direction"), TEXT("string"), TEXT("uses, usedBy or both. Default both."))
+			.Add(TEXT("depth"), TEXT("integer"), TEXT("How many links to follow, 1 to 3. Default 1."))
+			.Add(TEXT("limit"), TEXT("integer"), TEXT("Maximum lines, default 200, at most 2000."))
+			.Build(),
+		&References));
 
 	Tools.Add(MakeShared<FTool>(TEXT("age_get_asset"),
 		TEXT("Structure of one asset as compact JSON: properties, Blueprint variables/components/graphs (nodes, pins, links), AnimBP bindings, StateTree states and bindings, Niagara emitters and stacks. "

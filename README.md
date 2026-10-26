@@ -114,6 +114,7 @@ Claude Code ──→ 127.0.0.1:8000/mcp
 | 도구 | 하는 일 |
 |---|---|
 | `age_find_assets` | 이름(일부)·폴더·클래스로 에셋 찾기. 로드하지 않습니다. |
+| `age_references` | 참조 관계: 이 에셋이 쓰는 것(`uses`)과 이 에셋을 쓰는 것(`usedBy`). 한 줄에 경로, 클래스, `hard`(함께 로드)/`soft`(필요할 때 로드), 게임에 필요 없으면 `editor-only`. C++ 모듈(`/Script/...`)은 `native:` 한 줄로 모읍니다. `asset`에 `/Script/게임모듈`을 주면 그 모듈을 쓰는 에셋. `depth`(1~3)로 몇 단계까지 따라갈지. 에셋을 로드하지 않습니다(Asset Registry). |
 | `age_get_asset` | 위 JSON 스키마 그대로(공백 없는 JSON). `select`로 일부만 받습니다. 예: `stateTree.bindings`, `blueprint.graphs[EventGraph]`, `blueprint.graphs[0].nodes[3]`. 결과가 `maxChars`(기본 40000자)보다 길면 대신 목차(경로, 항목 수, 크기)를 돌려줍니다. |
 | `age_statetree_overview` | 상태 트리 요약: 상태 계층, 진입 조건, 태스크, 전환(대상, 트리거, 조건)을 한 줄씩 |
 | `age_statetree_bindings` | 바인딩을 `원본 -> 대상` 한 줄씩. `filter`로 거르기 |
@@ -145,6 +146,22 @@ EventGraph (Ubergraph):
 - 이미 쓴 노드로 다시 합쳐지면 `-> continues at "..." above`로 가리키기만 합니다(실행 루프도 여기서 끝남).
 - 실행 노드의 결과 값은 `함수이름.핀이름`으로 가리킵니다(호출은 그 노드의 줄에 있음). 나뉜 구조체 핀은 `.Yaw`, `(X=..., Y=..., Z=...)`처럼 씁니다.
 - 어떤 시작 노드에서도 닿지 않는 실행 노드는 그래프 끝에 `not reached from an entry`로 셉니다.
+
+`age_references` 출력 예 (`BP_GA_EnemyDodge`):
+
+```
+source: asset registry (saved files; unsaved editor changes are not included)
+/Game/MyStuff/Ability/BP_GA_EnemyDodge  [Blueprint]
+uses (4 + 3 native modules):
+  /Game/MyStuff/Ability/BP_GE_Cooldown  [Blueprint]  hard
+  /Game/MyStuff/SteampunkCat_Animation/MT_EnemySPCat_Dodge_Back  [AnimMontage]  hard
+  /Game/MyStuff/SteampunkCat_Animation/MT_EnemySPCat_Dodge_L  [AnimMontage]  hard
+  /Game/MyStuff/SteampunkCat_Animation/MT_EnemySPCat_Dodge_R  [AnimMontage]  hard
+  native: /Script/GameplayAbilities, /Script/GameplayTags, /Script/MomentTrigger
+used by (2):
+  /Game/MyStuff/EnemyAI/ST_Boss  [StateTree]  hard
+  /Game/MyStuff/EnemyCharacter/BP_SteampunkCat1  [Blueprint]  hard
+```
 
 ### 활동 창 (Claude가 MCP로 한 일 보기)
 
@@ -449,6 +466,7 @@ UE 5.8은 이 정보를 노드의 `Binding` 객체(`UAnimGraphNodeBinding_Base::
 - 레벨(맵) 에셋은 범용 `properties`만 나옵니다.
 - 상주 서버의 "다시 저장된 에셋 다시 읽기"는 아직 실제로 시험하지 않았습니다(시험하려면 `Content/` 파일을 바꿔야 해서).
 - 상주 서버는 요청받은 에셋의 패키지만 다시 읽습니다. 그 에셋이 참조하는 다른 에셋(예: 부모 BP)이 바뀐 경우, 그것이 메모리에서 정리(2분마다)되거나 직접 요청될 때까지 예전 값이 섞일 수 있습니다.
+- `age_references`는 디스크에 저장된 내용 기준입니다(Asset Registry). 에디터에서 저장하지 않은 변경은 반영되지 않습니다.
 - 실행 흐름 요약에서 순수 노드는 쓰일 때마다 식으로 다시 펼쳐집니다(같은 `TryGetPawnOwner()`가 여러 줄에 나올 수 있음).
 - `variables[].default`는 CDO 값입니다. CDO에 그 변수가 없으면(예: 변수를 추가한 뒤 컴파일하지 않음) `FBPVariableDescription::DefaultValue` 문자열을 대신 씁니다. 시험한 에셋에서는 이 문자열이 모두 비어 있었습니다.
 - 나이아가라: 경량(Stateless) 이미터는 범용 리플렉션으로만 씁니다. 스크래치 패드 모듈은 이름만 스택에 나오고, 내용은 `graphs`에 있습니다. `defaults`는 이름만 있고 값은 없습니다(모듈 에셋 쪽 기본값).

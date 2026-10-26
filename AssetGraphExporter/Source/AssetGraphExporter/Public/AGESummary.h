@@ -19,10 +19,17 @@ namespace AGE::Summary
 	ASSETGRAPHEXPORTER_API FString StateTreeBindings(const FJsonObject& Export, const FString& Filter);
 
 	/**
-	 * Variables, AnimGraph pose flow and state machines (state contents, transition rules written as expressions).
-	 * Needs the "blueprint" section; other graphs (EventGraph, functions) are only counted.
+	 * Variables with their defaults, AnimGraph pose flow, state machines (state contents, transition rules written as expressions),
+	 * then the execution flow of the EventGraph and function graphs (see BlueprintOverview). Needs the "blueprint" section.
 	 */
 	ASSETGRAPHEXPORTER_API FString AnimBlueprintOverview(const FJsonObject& Export);
+
+	/**
+	 * Parent class, interfaces, variables with their defaults, components, changed class defaults, then the execution flow of
+	 * every EventGraph, function, macro and collapsed graph: from each event or function entry one line per node along the
+	 * exec wires, Set nodes as "Var = expression", branches indented under their output names. Needs the "blueprint" section.
+	 */
+	ASSETGRAPHEXPORTER_API FString BlueprintOverview(const FJsonObject& Export);
 
 	/**
 	 * User parameters, system stacks, then each emitter: settings, every stack in execution order (simulation stages included)

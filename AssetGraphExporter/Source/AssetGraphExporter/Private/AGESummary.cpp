@@ -15,6 +15,8 @@ namespace AGE::SummaryDetail
 	constexpr int32 MaxInlineSettingsLength = 160;
 	/** Expressions deeper than this are cut with "..." (also guards against cycles). */
 	constexpr int32 MaxExpressionDepth = 24;
+	/** Exec nodes no entry reaches, named at the end of a graph's flow; the rest are only counted. */
+	constexpr int32 MaxUnreachedNames = 5;
 
 	const FJsonArray& EmptyArray()
 	{
@@ -189,6 +191,81 @@ namespace AGE::SummaryDetail
 		return nullptr;
 	}
 
+	const FJsonObject* FindPinById(const FJsonObject& Node, const FString& Id)
+	{
+		if (Id.IsEmpty())
+		{
+			return nullptr;
+		}
+		for (const FJsonObject* Pin : Pins(Node))
+		{
+			if (StringField(*Pin, TEXT("id")) == Id)
+			{
+				return Pin;
+			}
+		}
+		return nullptr;
+	}
+
+	/** Visible exec output pins in pin order. */
+	TArray<const FJsonObject*> ExecOutputs(const FJsonObject& Node)
+	{
+		TArray<const FJsonObject*> Result;
+		for (const FJsonObject* Pin : Pins(Node))
+		{
+			if (IsExec(*Pin) && !IsInput(*Pin) && !IsHidden(*Pin))
+			{
+				Result.Add(Pin);
+			}
+		}
+		return Result;
+	}
+
+	/** Nodes on the exec line (function calls with exec pins, Set, macros, Branch). Pure nodes have no exec pins. */
+	bool IsImpure(const FJsonObject& Node)
+	{
+		for (const FJsonObject* Pin : Pins(Node))
+		{
+			if (IsExec(*Pin))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** Where execution starts: events, custom events, function and macro entries (exec outputs but no exec input). */
+	bool IsEntry(const FJsonObject& Node)
+	{
+		for (const FJsonObject* Pin : Pins(Node))
+		{
+			if (IsExec(*Pin) && IsInput(*Pin))
+			{
+				return false;
+			}
+		}
+		return ExecOutputs(Node).Num() > 0;
+	}
+
+	/** MemberName of the node's "VariableReference" or "FunctionReference" property. */
+	FString MemberName(const FJsonObject& Node, const TCHAR* ReferenceKey)
+	{
+		const FJsonObject* Properties = ObjectField(Node, TEXT("properties"));
+		const FJsonObject* Reference = Properties ? ObjectField(*Properties, ReferenceKey) : nullptr;
+		return Reference ? StringField(*Reference, TEXT("MemberName")) : FString();
+	}
+
+	/** " (disabled)" for a disabled node, " (DevelopmentOnly)" for other non-default states. */
+	FString StateSuffix(const FJsonObject& Node)
+	{
+		const FString State = StringField(Node, TEXT("enabledState"));
+		if (State.IsEmpty())
+		{
+			return FString();
+		}
+		return State == TEXT("Disabled") ? FString(TEXT(" (disabled)")) : FString::Printf(TEXT(" (%s)"), *State);
+	}
+
 	FString TypeText(const FJsonObject* Type)
 	{
 		if (!Type)
@@ -275,7 +352,7 @@ namespace AGE::SummaryDetail
 		return Found ? *Found : nullptr;
 	}
 
-	/** Writes pure node networks (transition rules, values feeding anim nodes) as one-line expressions. */
+	/** Writes pure node networks (transition rules, values feeding anim nodes, Set nodes) as one-line expressions. */
 	class FExpressionWriter
 	{
 	public:
@@ -293,6 +370,34 @@ namespace AGE::SummaryDetail
 				return Source ? NodeValue(*Source, StringField(*Link, TEXT("pinName")), Depth + 1) : FString(TEXT("?"));
 			}
 			return DefaultLiteral(Pin);
+		}
+
+		/** "Target." when the node's self pin is wired to something, otherwise empty. */
+		FString Target(const FJsonObject& Node, int32 Depth = 0) const
+		{
+			const FJsonObject* SelfPin = FindPin(Node, TEXT("self"));
+			return SelfPin && FirstLink(*SelfPin) ? InputValue(*SelfPin, Depth) + TEXT(".") : FString();
+		}
+
+		/** Values of the visible data inputs other than self, in pin order. */
+		TArray<FString> Arguments(const FJsonObject& Node, int32 Depth = 0) const
+		{
+			TArray<FString> Result;
+			for (const FJsonObject* Pin : Pins(Node))
+			{
+				if (IsInput(*Pin) && !IsExec(*Pin) && !IsHidden(*Pin) && StringField(*Pin, TEXT("name")) != TEXT("self"))
+				{
+					Result.Add(InputValue(*Pin, Depth));
+				}
+			}
+			return Result;
+		}
+
+		/** The called function's name, or the node title for nodes that call none (macros, Sequence, ...). */
+		static FString CallName(const FJsonObject& Node)
+		{
+			const FString Function = MemberName(Node, TEXT("FunctionReference"));
+			return Function.IsEmpty() ? OneLine(StringField(Node, TEXT("title"))) : Function;
 		}
 
 	private:
@@ -321,42 +426,64 @@ namespace AGE::SummaryDetail
 			{
 				return TEXT("...");
 			}
-			const FString Class = StringField(Node, TEXT("class"));
-			const FJsonObject* Properties = ObjectField(Node, TEXT("properties"));
-			const FJsonObject* SelfPin = FindPin(Node, TEXT("self"));
-			const FString Target = SelfPin && FirstLink(*SelfPin) ? InputValue(*SelfPin, Depth) + TEXT(".") : FString();
+			// A split struct output ("ReturnValue_Yaw") is its parent pin's value plus the member: "....Yaw".
+			if (const FJsonObject* Pin = FindPin(Node, *OutputPin))
+			{
+				if (const FJsonObject* Parent = FindPinById(Node, StringField(*Pin, TEXT("parentPin"))))
+				{
+					const FString ParentName = StringField(*Parent, TEXT("name"));
+					FString Member = OutputPin;
+					Member.RemoveFromStart(ParentName + TEXT("_"));
+					return NodeValue(Node, ParentName, Depth + 1) + TEXT(".") + Member;
+				}
+			}
 
+			const FString Class = StringField(Node, TEXT("class"));
 			if (Class == TEXT("K2Node_Self"))
 			{
 				return TEXT("self");
 			}
+			if (Class == TEXT("K2Node_Knot"))
+			{
+				// Reroute node: the value passes through.
+				for (const FJsonObject* Pin : Pins(Node))
+				{
+					if (IsInput(*Pin))
+					{
+						return InputValue(*Pin, Depth);
+					}
+				}
+				return TEXT("?");
+			}
 			if (Class == TEXT("K2Node_VariableGet"))
 			{
-				const FJsonObject* Reference = Properties ? ObjectField(*Properties, TEXT("VariableReference")) : nullptr;
-				const FString Name = Reference ? StringField(*Reference, TEXT("MemberName")) : FString();
-				return Target + (Name.IsEmpty() ? OutputPin : Name);
+				const FString Name = MemberName(Node, TEXT("VariableReference"));
+				return Target(Node, Depth) + (Name.IsEmpty() ? OutputPin : Name);
+			}
+			if (IsEntry(Node))
+			{
+				// Event and function parameters are used by name.
+				return OutputPin;
+			}
+			if (IsImpure(Node))
+			{
+				// Result of a node on the exec line: the call is written on its own line, so it is only referred to here.
+				return CallName(Node) + TEXT(".") + OutputPin;
 			}
 
-			TArray<FString> Arguments;
+			const TArray<FString> Args = Arguments(Node, Depth);
 			int32 DataOutputs = 0;
 			for (const FJsonObject* Pin : Pins(Node))
 			{
-				if (IsExec(*Pin))
-				{
-					continue;
-				}
-				if (!IsInput(*Pin))
+				if (!IsExec(*Pin) && !IsInput(*Pin))
 				{
 					++DataOutputs;
-				}
-				else if (!IsHidden(*Pin) && StringField(*Pin, TEXT("name")) != TEXT("self"))
-				{
-					Arguments.Add(InputValue(*Pin, Depth));
 				}
 			}
 
 			FString Function;
 			FString FunctionOwner;
+			const FJsonObject* Properties = ObjectField(Node, TEXT("properties"));
 			if (const FJsonObject* Reference = Properties ? ObjectField(*Properties, TEXT("FunctionReference")) : nullptr)
 			{
 				Function = StringField(*Reference, TEXT("MemberName"));
@@ -375,19 +502,18 @@ namespace AGE::SummaryDetail
 			FString Text;
 			if (const TCHAR* Symbol = OperatorSymbol(Operation))
 			{
-				if (Arguments.Num() == 1)
+				if (Args.Num() == 1)
 				{
-					Text = FString::Printf(TEXT("%s %s"), Symbol, *Arguments[0]);
+					Text = FString::Printf(TEXT("%s %s"), Symbol, *Args[0]);
 				}
 				else
 				{
-					Text = TEXT("(") + FString::Join(Arguments, *FString::Printf(TEXT(" %s "), Symbol)) + TEXT(")");
+					Text = TEXT("(") + FString::Join(Args, *FString::Printf(TEXT(" %s "), Symbol)) + TEXT(")");
 				}
 			}
 			else
 			{
-				const FString Name = Function.IsEmpty() ? OneLine(StringField(Node, TEXT("title"))) : Function;
-				Text = FString::Printf(TEXT("%s%s(%s)"), *Target, *Name, *FString::Join(Arguments, TEXT(", ")));
+				Text = FString::Printf(TEXT("%s%s(%s)"), *Target(Node, Depth), *CallName(Node), *FString::Join(Args, TEXT(", ")));
 			}
 			// Nodes with several outputs (break struct, out parameters) say which one is used.
 			if (DataOutputs > 1 && OutputPin != TEXT("ReturnValue"))
@@ -398,6 +524,215 @@ namespace AGE::SummaryDetail
 		}
 
 		const FGraphView& View;
+	};
+
+	/**
+	 * Writes a Blueprint graph (EventGraph, function, macro, collapsed graph) as its execution flow: from each entry node,
+	 * one line per node along the exec wires. Set nodes read "Var = expression". Nodes with several exec outputs
+	 * (Branch, Sequence, Is Valid, loops, Switch) list each connected output in [brackets], indented, with what runs from it.
+	 * Joining a node already written gives a reference to it instead of repeating it (also ends exec loops).
+	 */
+	class FFlowWriter
+	{
+	public:
+		explicit FFlowWriter(const FGraphView& InView)
+			: View(InView)
+			, Expressions(InView)
+		{
+		}
+
+		/** Lines indented by two spaces. Empty when the graph has no entry node (disabled placeholder events do not count). */
+		TArray<FString> Write()
+		{
+			for (const FJsonObject* Node : View.Nodes)
+			{
+				if (!IsEntry(*Node) || BoolField(*Node, TEXT("ghost"), false))
+				{
+					continue;
+				}
+				TArray<FString> Parameters;
+				for (const FJsonObject* Pin : Pins(*Node))
+				{
+					if (!IsInput(*Pin) && !IsExec(*Pin) && !IsHidden(*Pin) && PinCategory(*Pin) != TEXT("delegate"))
+					{
+						Parameters.Add(StringField(*Pin, TEXT("name")));
+					}
+				}
+				FString Head = OneLine(StringField(*Node, TEXT("title")));
+				if (Parameters.Num() > 0)
+				{
+					Head += TEXT("(") + FString::Join(Parameters, TEXT(", ")) + TEXT(")");
+				}
+				Lines.Add(TEXT("  ") + Head + StateSuffix(*Node) + TEXT(":"));
+				const int32 HeadIndex = Lines.Num() - 1;
+
+				const TArray<const FJsonObject*> Outputs = ExecOutputs(*Node);
+				if (Outputs.Num() == 1)
+				{
+					WriteChain(*Outputs[0], TEXT("    "), 0);
+				}
+				else
+				{
+					for (const FJsonObject* Pin : Outputs)
+					{
+						if (FirstLink(*Pin))
+						{
+							Lines.Add(TEXT("    [") + PinLabel(*Pin) + TEXT("]"));
+							WriteChain(*Pin, TEXT("      "), 0);
+						}
+					}
+				}
+				if (Lines.Num() == HeadIndex + 1)
+				{
+					Lines[HeadIndex] += TEXT(" (nothing connected)");
+				}
+			}
+
+			// Exec nodes no entry leads to never run: often leftovers worth knowing about.
+			TArray<FString> Unreached;
+			for (const FJsonObject* Node : View.Nodes)
+			{
+				if (IsImpure(*Node) && !IsEntry(*Node) && StringField(*Node, TEXT("class")) != TEXT("K2Node_Knot") && !Written.Contains(StringField(*Node, TEXT("guid"))))
+				{
+					Unreached.Add(OneLine(StringField(*Node, TEXT("title"))));
+				}
+			}
+			if (Unreached.Num() > 0)
+			{
+				const int32 Shown = FMath::Min(Unreached.Num(), MaxUnreachedNames);
+				const TArray<FString> Names(Unreached.GetData(), Shown);
+				FString Line = FString::Printf(TEXT("  not reached from an entry (%d): %s"), Unreached.Num(), *FString::Join(Names, TEXT(", ")));
+				if (Unreached.Num() > Shown)
+				{
+					Line += TEXT(" ...");
+				}
+				Lines.Add(Line);
+			}
+			return Lines;
+		}
+
+	private:
+		FString Statement(const FJsonObject& Node) const
+		{
+			const FString Class = StringField(Node, TEXT("class"));
+			FString Text;
+			if (Class == TEXT("K2Node_VariableSet"))
+			{
+				const FString Name = MemberName(Node, TEXT("VariableReference"));
+				TArray<const FJsonObject*> Values;
+				for (const FJsonObject* Pin : Pins(Node))
+				{
+					if (IsInput(*Pin) && !IsExec(*Pin) && !IsHidden(*Pin) && StringField(*Pin, TEXT("name")) != TEXT("self"))
+					{
+						Values.Add(Pin);
+					}
+				}
+				FString Value;
+				if (Values.Num() == 1)
+				{
+					Value = Expressions.InputValue(*Values[0]);
+				}
+				else
+				{
+					// A split struct pin ("LookAtTarget_X", "_Y", "_Z"): (X=..., Y=..., Z=...)
+					TArray<FString> Parts;
+					for (const FJsonObject* Pin : Values)
+					{
+						FString Member = StringField(*Pin, TEXT("name"));
+						Member.RemoveFromStart(Name + TEXT("_"));
+						Parts.Add(Member + TEXT("=") + Expressions.InputValue(*Pin));
+					}
+					Value = TEXT("(") + FString::Join(Parts, TEXT(", ")) + TEXT(")");
+				}
+				Text = Expressions.Target(Node) + Name + TEXT(" = ") + Value;
+			}
+			else if (Class == TEXT("K2Node_IfThenElse"))
+			{
+				const FJsonObject* Condition = FindPin(Node, TEXT("Condition"));
+				Text = TEXT("if ") + (Condition ? Expressions.InputValue(*Condition) : FString(TEXT("?")));
+			}
+			else if (Class == TEXT("K2Node_FunctionResult"))
+			{
+				TArray<FString> Parts;
+				for (const FJsonObject* Pin : Pins(Node))
+				{
+					if (IsInput(*Pin) && !IsExec(*Pin) && !IsHidden(*Pin))
+					{
+						Parts.Add(PinLabel(*Pin) + TEXT("=") + Expressions.InputValue(*Pin));
+					}
+				}
+				Text = Parts.IsEmpty() ? FString(TEXT("return")) : TEXT("return ") + FString::Join(Parts, TEXT(", "));
+			}
+			else
+			{
+				const TArray<FString> Args = Expressions.Arguments(Node);
+				Text = Expressions.Target(Node) + FExpressionWriter::CallName(Node);
+				// Function calls always get parentheses; flow nodes without inputs (Sequence) read better without.
+				if (Args.Num() > 0 || !MemberName(Node, TEXT("FunctionReference")).IsEmpty())
+				{
+					Text += TEXT("(") + FString::Join(Args, TEXT(", ")) + TEXT(")");
+				}
+			}
+			return Text + StateSuffix(Node);
+		}
+
+		/** Writes what runs from an exec output pin, one line per node, until the chain ends or splits. */
+		void WriteChain(const FJsonObject& FromPin, const FString& Indent, int32 Depth)
+		{
+			TSet<FString> KnotsSeen;
+			const FJsonObject* Link = FirstLink(FromPin);
+			while (Link)
+			{
+				const FJsonObject* Node = View.Find(StringField(*Link, TEXT("node")));
+				if (!Node)
+				{
+					Lines.Add(Indent + TEXT("?"));
+					return;
+				}
+				const FString Guid = StringField(*Node, TEXT("guid"));
+				const TArray<const FJsonObject*> Outputs = ExecOutputs(*Node);
+				if (StringField(*Node, TEXT("class")) == TEXT("K2Node_Knot"))
+				{
+					// Reroute node: follow it (a loop made only of reroutes ends here).
+					bool bAlreadySeen = false;
+					KnotsSeen.Add(Guid, &bAlreadySeen);
+					Link = !bAlreadySeen && Outputs.Num() > 0 ? FirstLink(*Outputs[0]) : nullptr;
+					continue;
+				}
+				if (Depth > MaxExpressionDepth)
+				{
+					Lines.Add(Indent + TEXT("..."));
+					return;
+				}
+				if (Written.Contains(Guid))
+				{
+					Lines.Add(Indent + FString::Printf(TEXT("-> continues at \"%s\" above"), *Statement(*Node)));
+					return;
+				}
+				Written.Add(Guid);
+				Lines.Add(Indent + Statement(*Node));
+				if (Outputs.Num() == 1)
+				{
+					Link = FirstLink(*Outputs[0]);
+					continue;
+				}
+				for (const FJsonObject* Pin : Outputs)
+				{
+					if (FirstLink(*Pin))
+					{
+						Lines.Add(Indent + TEXT("  [") + PinLabel(*Pin) + TEXT("]"));
+						WriteChain(*Pin, Indent + TEXT("    "), Depth + 1);
+					}
+				}
+				return;
+			}
+		}
+
+		const FGraphView& View;
+		FExpressionWriter Expressions;
+		TArray<FString> Lines;
+		/** Guids of the exec nodes written so far, across all entries of the graph. */
+		TSet<FString> Written;
 	};
 
 	/** Writes anim graph pose flow: "Slot 'DefaultSlot' <- Main State Machine". */
@@ -711,6 +1046,108 @@ namespace AGE::SummaryDetail
 			{
 				CollectGraphs(*SubGraph, OutGraphs);
 			}
+		}
+	}
+
+	/** A value from the export as short text: numbers trimmed, object paths shortened, long structs and arrays only counted. */
+	FString ValueText(const TSharedPtr<FJsonValue>& Value)
+	{
+		if (!Value.IsValid())
+		{
+			return TEXT("?");
+		}
+		switch (Value->Type)
+		{
+		case EJson::Null:
+			return TEXT("None");
+		case EJson::String:
+		{
+			const FString Text = Value->AsString();
+			return Text.StartsWith(TEXT("/")) ? ShortName(Text) : Text;
+		}
+		case EJson::Number:
+			return FString::SanitizeFloat(Value->AsNumber(), 0);
+		case EJson::Boolean:
+			return Value->AsBool() ? TEXT("true") : TEXT("false");
+		case EJson::Array:
+		{
+			const FString Text = Condensed(Value);
+			return Text.Len() <= MaxInlineSettingsLength ? Text : FString::Printf(TEXT("[%d items]"), Value->AsArray().Num());
+		}
+		case EJson::Object:
+		{
+			const FString Text = Condensed(Value);
+			return Text.Len() <= MaxInlineSettingsLength ? Text : FString::Printf(TEXT("{%d settings}"), Value->AsObject()->Values.Num());
+		}
+		default:
+			return TEXT("?");
+		}
+	}
+
+	/** "variables: Name:type=default, ..." from a "blueprint" section. */
+	void WriteVariables(const FJsonObject& Blueprint, TArray<FString>& Lines)
+	{
+		TArray<FString> Variables;
+		for (const TSharedPtr<FJsonValue>& Value : ArrayField(Blueprint, TEXT("variables")))
+		{
+			if (const FJsonObject* Variable = AsObject(Value))
+			{
+				FString Text = FString::Printf(TEXT("%s:%s"), *StringField(*Variable, TEXT("name")), *TypeText(ObjectField(*Variable, TEXT("type"))));
+				const TSharedPtr<FJsonValue> Default = Variable->TryGetField(TEXT("default"));
+				if (Default.IsValid())
+				{
+					Text += TEXT("=") + ValueText(Default);
+				}
+				Variables.Add(Text);
+			}
+		}
+		if (Variables.Num() > 0)
+		{
+			Lines.Add(TEXT("variables: ") + FString::Join(Variables, TEXT(", ")));
+		}
+	}
+
+	void WriteGraphFlow(const FJsonObject& Graph, TArray<FString>& Lines)
+	{
+		const FGraphView View(Graph);
+		FFlowWriter Flow(View);
+		const TArray<FString> Body = Flow.Write();
+		Lines.Add(FString::Printf(TEXT("%s (%s):%s"), *StringField(Graph, TEXT("name")), *StringField(Graph, TEXT("kind")), Body.IsEmpty() ? TEXT(" (empty)") : TEXT("")));
+		Lines.Append(Body);
+	}
+
+	/**
+	 * Execution flow of every EventGraph, function and macro graph, and of the collapsed graphs inside them.
+	 * AnimGraphs are skipped (the AnimBP overview writes their pose flow); any other top-level graph is only listed.
+	 */
+	void WriteFlowGraphs(const FJsonObject& Blueprint, TArray<FString>& Lines)
+	{
+		TArray<FString> OtherGraphs;
+		for (const TSharedPtr<FJsonValue>& Value : ArrayField(Blueprint, TEXT("graphs")))
+		{
+			const FJsonObject* Graph = AsObject(Value);
+			if (!Graph || StringField(*Graph, TEXT("class")) == TEXT("AnimationGraph"))
+			{
+				continue;
+			}
+			const FString Kind = StringField(*Graph, TEXT("kind"));
+			if (Kind == TEXT("Ubergraph") || Kind == TEXT("Function") || Kind == TEXT("Macro"))
+			{
+				TArray<const FJsonObject*> Graphs;
+				CollectGraphs(*Graph, Graphs);
+				for (const FJsonObject* FlowGraph : Graphs)
+				{
+					WriteGraphFlow(*FlowGraph, Lines);
+				}
+			}
+			else
+			{
+				OtherGraphs.Add(FString::Printf(TEXT("%s (%s, %d nodes)"), *StringField(*Graph, TEXT("name")), *Kind, ArrayField(*Graph, TEXT("nodes")).Num()));
+			}
+		}
+		if (OtherGraphs.Num() > 0)
+		{
+			Lines.Add(TEXT("other graphs (not summarized): ") + FString::Join(OtherGraphs, TEXT(", ")));
 		}
 	}
 
@@ -1289,26 +1726,13 @@ FString AGE::Summary::AnimBlueprintOverview(const FJsonObject& Export)
 	TArray<FString> Lines;
 	Lines.Add(FString::Printf(TEXT("AnimBlueprint %s  parent=%s"), *AssetPath(Export), *ShortName(StringField(*Blueprint, TEXT("parentClass")))));
 
-	TArray<FString> Variables;
-	for (const TSharedPtr<FJsonValue>& Value : ArrayField(*Blueprint, TEXT("variables")))
-	{
-		if (const FJsonObject* Variable = AsObject(Value))
-		{
-			Variables.Add(FString::Printf(TEXT("%s:%s"), *StringField(*Variable, TEXT("name")), *TypeText(ObjectField(*Variable, TEXT("type")))));
-		}
-	}
-	if (Variables.Num() > 0)
-	{
-		Lines.Add(TEXT("variables: ") + FString::Join(Variables, TEXT(", ")));
-	}
+	WriteVariables(*Blueprint, Lines);
 
-	TArray<const FJsonObject*> TopGraphs;
 	TArray<const FJsonObject*> AllGraphs;
 	for (const TSharedPtr<FJsonValue>& Value : ArrayField(*Blueprint, TEXT("graphs")))
 	{
 		if (const FJsonObject* Graph = AsObject(Value))
 		{
-			TopGraphs.Add(Graph);
 			CollectGraphs(*Graph, AllGraphs);
 		}
 	}
@@ -1340,18 +1764,98 @@ FString AGE::Summary::AnimBlueprintOverview(const FJsonObject& Export)
 		}
 	}
 
-	TArray<FString> OtherGraphs;
-	for (const FJsonObject* Graph : TopGraphs)
+	WriteFlowGraphs(*Blueprint, Lines);
+	return FString::Join(Lines, TEXT("\n"));
+}
+
+FString AGE::Summary::BlueprintOverview(const FJsonObject& Export)
+{
+	using namespace AGE::SummaryDetail;
+	const FJsonObject* Blueprint = ObjectField(Export, TEXT("blueprint"));
+	if (!Blueprint)
 	{
-		if (StringField(*Graph, TEXT("class")) != TEXT("AnimationGraph"))
+		return FString();
+	}
+
+	TArray<FString> Lines;
+	const FString Parent = ShortName(StringField(*Blueprint, TEXT("parentClass")));
+	FString Header = FString::Printf(TEXT("Blueprint %s  parent=%s"), *AssetPath(Export), *Parent);
+	const FString NativeParent = ShortName(StringField(*Blueprint, TEXT("nativeParentClass")));
+	if (!NativeParent.IsEmpty() && NativeParent != Parent)
+	{
+		Header += TEXT("  native=") + NativeParent;
+	}
+	const FString Type = StringField(*Blueprint, TEXT("type"));
+	if (!Type.IsEmpty() && Type != TEXT("BPTYPE_Normal"))
+	{
+		Header += TEXT("  type=") + Type;
+	}
+	Lines.Add(Header);
+
+	TArray<FString> Interfaces;
+	for (const TSharedPtr<FJsonValue>& Value : ArrayField(*Blueprint, TEXT("interfaces")))
+	{
+		Interfaces.Add(ShortName(Value->AsString()));
+	}
+	if (Interfaces.Num() > 0)
+	{
+		Lines.Add(TEXT("interfaces: ") + FString::Join(Interfaces, TEXT(", ")));
+	}
+
+	WriteVariables(*Blueprint, Lines);
+
+	// "Mesh:StaticMeshComponent <- DefaultSceneRoot @hand_r {settings}"
+	TArray<FString> Components;
+	for (const TSharedPtr<FJsonValue>& Value : ArrayField(*Blueprint, TEXT("components")))
+	{
+		if (const FJsonObject* Component = AsObject(Value))
 		{
-			OtherGraphs.Add(FString::Printf(TEXT("%s (%s, %d nodes)"), *StringField(*Graph, TEXT("name")), *StringField(*Graph, TEXT("kind")), ArrayField(*Graph, TEXT("nodes")).Num()));
+			FString Text = FString::Printf(TEXT("%s:%s"), *StringField(*Component, TEXT("name")), *ShortName(StringField(*Component, TEXT("class"))));
+			const FString ComponentParent = StringField(*Component, TEXT("parent"));
+			if (!ComponentParent.IsEmpty())
+			{
+				Text += TEXT(" <- ") + ComponentParent;
+			}
+			const FString Socket = StringField(*Component, TEXT("attachSocket"));
+			if (!Socket.IsEmpty())
+			{
+				Text += TEXT(" @") + Socket;
+			}
+			Components.Add(Text + InlineSettings(*Component, TEXT("properties")));
 		}
 	}
-	if (OtherGraphs.Num() > 0)
+	if (Components.Num() > 0)
 	{
-		Lines.Add(TEXT("other graphs (not summarized): ") + FString::Join(OtherGraphs, TEXT(", ")));
+		Lines.Add(TEXT("components: ") + FString::Join(Components, TEXT(", ")));
 	}
+
+	// Class Defaults values other than this Blueprint's own variables (those are shown with the variables).
+	if (const FJsonObject* ClassDefaults = ObjectField(*Blueprint, TEXT("classDefaults")))
+	{
+		TSet<FString> VariableNames;
+		for (const TSharedPtr<FJsonValue>& Value : ArrayField(*Blueprint, TEXT("variables")))
+		{
+			if (const FJsonObject* Variable = AsObject(Value))
+			{
+				VariableNames.Add(StringField(*Variable, TEXT("name")));
+			}
+		}
+		TArray<FString> Defaults;
+		for (const auto& Pair : ClassDefaults->Values)
+		{
+			const FString Key(*Pair.Key);
+			if (!VariableNames.Contains(Key))
+			{
+				Defaults.Add(Key + TEXT("=") + ValueText(Pair.Value));
+			}
+		}
+		if (Defaults.Num() > 0)
+		{
+			Lines.Add(TEXT("class defaults: ") + FString::Join(Defaults, TEXT(", ")));
+		}
+	}
+
+	WriteFlowGraphs(*Blueprint, Lines);
 	return FString::Join(Lines, TEXT("\n"));
 }
 

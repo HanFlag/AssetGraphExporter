@@ -355,6 +355,14 @@ namespace AGE::McpToolsDetail
 		});
 	}
 
+	FModelContextProtocolToolResult BlueprintOverview(const FJsonObject& Arguments)
+	{
+		return SummaryResult(Arguments, TEXT("Blueprint"), TEXT("a Blueprint (for Animation Blueprints use age_animbp_overview)"), [](const FJsonObject& Export)
+		{
+			return AGE::Summary::BlueprintOverview(Export);
+		});
+	}
+
 	FModelContextProtocolToolResult AnimBlueprintOverview(const FJsonObject& Arguments)
 	{
 		return SummaryResult(Arguments, TEXT("AnimBlueprint"), TEXT("an Animation Blueprint"), [](const FJsonObject& Export)
@@ -427,7 +435,7 @@ TArray<TSharedRef<IModelContextProtocolTool>> AGE::Mcp::CreateTools()
 		TEXT("Structure of one asset as compact JSON: properties, Blueprint variables/components/graphs (nodes, pins, links), AnimBP bindings, StateTree states and bindings, Niagara emitters and stacks. "
 			"By default only values that differ from defaults are written. Use 'select' for one part, e.g. 'stateTree.bindings', 'blueprint.graphs[EventGraph]' or 'blueprint.graphs[0].nodes[3]'. "
 			"When the result is longer than maxChars an outline (paths, item counts, sizes) is returned instead, so you can narrow 'select'. "
-			"For StateTrees, Animation Blueprints and Niagara Systems, start with age_statetree_overview / age_animbp_overview / age_niagara_overview, which are much shorter."),
+			"For Blueprints, StateTrees, Animation Blueprints and Niagara Systems, start with age_blueprint_overview / age_statetree_overview / age_animbp_overview / age_niagara_overview, which are much shorter."),
 		FSchema()
 			.Add(TEXT("asset"), TEXT("string"), AssetText, true)
 			.Add(TEXT("select"), TEXT("string"), TEXT("Path inside the JSON: keys separated by '.', [n] for an array index, [Name] for the item whose name/path/title is Name. Optional."))
@@ -452,10 +460,21 @@ TArray<TSharedRef<IModelContextProtocolTool>> AGE::Mcp::CreateTools()
 			.Build(),
 		&StateTreeBindings));
 
+	Tools.Add(MakeShared<FTool>(TEXT("age_blueprint_overview"),
+		TEXT("Blueprint summary (Actor, GameplayAbility, Widget and other Blueprints): parent class, interfaces, variables with their default values, "
+			"components, class defaults this Blueprint changed, then the execution flow of the EventGraph, functions, macros and collapsed graphs. "
+			"Flow: from each event or function entry, one line per node along the exec wires; Set nodes as 'Var = expression' "
+			"(e.g. 'AimTurnRate = (NormalizeAxis((Yaw - LastYaw)) / DeltaTime)'); Branch as 'if condition'; nodes with several exec outputs "
+			"(Branch, Sequence, Is Valid, loops) list each connected output in [brackets] with what runs from it. "
+			"For Animation Blueprints use age_animbp_overview; for raw nodes and pins use age_get_asset with select, e.g. 'blueprint.graphs[EventGraph]'."),
+		FSchema().Add(TEXT("asset"), TEXT("string"), AssetText, true).Build(),
+		&BlueprintOverview));
+
 	Tools.Add(MakeShared<FTool>(TEXT("age_animbp_overview"),
-		TEXT("Animation Blueprint summary: variables, AnimGraph pose flow (with the values and property-access bindings feeding each node), "
-			"and every state machine with each state's pose and each transition rule written as an expression, e.g. "
-			"'CombatMove -> TurnInPlace if (bIsCombatMove AND (Speed2D < 10))'. The EventGraph and functions are only listed; use age_get_asset with select for them."),
+		TEXT("Animation Blueprint summary: variables with their default values, AnimGraph pose flow (with the values and property-access bindings feeding each node), "
+			"every state machine with each state's pose and each transition rule written as an expression, e.g. "
+			"'CombatMove -> TurnInPlace if (bIsCombatMove AND (Speed2D < 10))', "
+			"then the execution flow of the EventGraph and functions in the same form as age_blueprint_overview."),
 		FSchema().Add(TEXT("asset"), TEXT("string"), AssetText, true).Build(),
 		&AnimBlueprintOverview));
 

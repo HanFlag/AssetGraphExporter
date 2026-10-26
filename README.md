@@ -117,7 +117,8 @@ Claude Code ──→ 127.0.0.1:8000/mcp
 | `age_get_asset` | 위 JSON 스키마 그대로(공백 없는 JSON). `select`로 일부만 받습니다. 예: `stateTree.bindings`, `blueprint.graphs[EventGraph]`, `blueprint.graphs[0].nodes[3]`. 결과가 `maxChars`(기본 40000자)보다 길면 대신 목차(경로, 항목 수, 크기)를 돌려줍니다. |
 | `age_statetree_overview` | 상태 트리 요약: 상태 계층, 진입 조건, 태스크, 전환(대상, 트리거, 조건)을 한 줄씩 |
 | `age_statetree_bindings` | 바인딩을 `원본 -> 대상` 한 줄씩. `filter`로 거르기 |
-| `age_animbp_overview` | AnimBP 요약: 변수, AnimGraph 포즈 흐름, 스테이트 머신의 상태별 포즈와 전환 규칙(식으로) |
+| `age_blueprint_overview` | BP 요약(Actor, GameplayAbility, Widget 등): 부모 클래스, 인터페이스, 변수와 기본값, 컴포넌트, 이 BP가 바꾼 클래스 기본값, EventGraph·함수·매크로·접힌 그래프의 **실행 흐름** |
+| `age_animbp_overview` | AnimBP 요약: 변수와 기본값, AnimGraph 포즈 흐름, 스테이트 머신의 상태별 포즈와 전환 규칙(식으로), EventGraph·함수의 실행 흐름 |
 | `age_niagara_overview` | 나이아가라 요약: 사용자 파라미터, 시스템 스택, 이미터마다 실행 순서대로 모든 스택(이벤트 핸들러, **Simulation Stage** 포함)의 모듈과 설정한 입력값, 렌더러 |
 | `age_status` | 지금 대답하는 쪽(에디터 / 상주 서버), 프로젝트, 엔진·플러그인 버전 |
 | `age_shutdown` | 상주 서버 끄기 (에디터 안에서는 아무것도 하지 않음) |
@@ -129,7 +130,21 @@ StateMachine Main
   entry -> Locomotion
   state Locomotion: BS2D_BossMoveLocomotion Blendspace Player(X=Direction, Y=Speed2D)
   CombatMove -> TurnInPlace if (bIsCombatMove AND (Speed2D < 10) AND (Abs(AimTurnRate) > 20))
+EventGraph (Ubergraph):
+  Event BlueprintUpdateAnimation(DeltaTimeX):
+    Is Valid(TryGetPawnOwner())
+      [Is Valid]
+        AimTurnRate = (NormalizeAxis((TryGetPawnOwner().K2_GetActorRotation().Yaw - LastYaw)) / DeltaTimeX)
+        LastYaw = TryGetPawnOwner().K2_GetActorRotation().Yaw
 ```
+
+실행 흐름 읽는 법 (`age_blueprint_overview`, `age_animbp_overview` 공통):
+- 이벤트·함수 시작 노드마다 한 덩어리. 실행 핀을 따라 노드 하나에 한 줄입니다.
+- Set 노드는 `변수 = 식`, Branch는 `if 조건`, 함수 반환은 `return 이름=식`. 식은 연결된 순수 노드를 펼쳐 쓴 것입니다.
+- 실행 출력이 여러 개인 노드(Branch, Sequence, Is Valid, 반복문, Switch)는 연결된 출력마다 `[출력 이름]` 아래로 들여 씁니다.
+- 이미 쓴 노드로 다시 합쳐지면 `-> continues at "..." above`로 가리키기만 합니다(실행 루프도 여기서 끝남).
+- 실행 노드의 결과 값은 `함수이름.핀이름`으로 가리킵니다(호출은 그 노드의 줄에 있음). 나뉜 구조체 핀은 `.Yaw`, `(X=..., Y=..., Z=...)`처럼 씁니다.
+- 어떤 시작 노드에서도 닿지 않는 실행 노드는 그래프 끝에 `not reached from an entry`로 셉니다.
 
 ### 활동 창 (Claude가 MCP로 한 일 보기)
 
@@ -190,13 +205,15 @@ UnrealEditor-Cmd.exe <Project>.uproject -run=AssetGraphServe [-IdleMinutes=30] [
 
 `-Full`을 주면 이 비교를 끄고 전부 씁니다.
 
-## JSON 스키마 (schemaVersion 1)
+## JSON 스키마 (schemaVersion 2)
+
+버전 2: `blueprint.variables[].default`가 문자열에서 JSON 값(CDO 값)으로 바뀌었습니다.
 
 ### 공통 (모든 에셋)
 
 ```jsonc
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "exporter": { "name": "AssetGraphExporter", "version": "0.1.0", "diffOnly": true },
   "engineVersion": "5.8.4",
   "asset": { "path": "/Game/Folder/BP_Thing.BP_Thing", "class": "/Script/Engine.Blueprint" },
@@ -240,7 +257,7 @@ UnrealEditor-Cmd.exe <Project>.uproject -run=AssetGraphServe [-IdleMinutes=30] [
   "interfaces": [ "/Script/..." ],
   "variables": [ {
     "name": "Speed", "guid": "...", "type": { /* 핀 타입 */ },
-    "category": "Default", "default": "600.0",
+    "category": "Default", "default": 600.0,     // CDO 값. classDefaults와 같은 JSON 값(숫자, 불, 문자열, 객체)
     "flags": [ "Edit", "BlueprintVisible" ],    // Edit, DisableEditOnInstance, BlueprintVisible, BlueprintReadOnly,
                                                 // ExposeOnSpawn, Replicated, RepNotify, Transient, SaveGame, Config, Interp, AdvancedDisplay
     "repNotify": "OnRep_Speed", "metaData": { "tooltip": "..." }
@@ -432,6 +449,7 @@ UE 5.8은 이 정보를 노드의 `Binding` 객체(`UAnimGraphNodeBinding_Base::
 - 레벨(맵) 에셋은 범용 `properties`만 나옵니다.
 - 상주 서버의 "다시 저장된 에셋 다시 읽기"는 아직 실제로 시험하지 않았습니다(시험하려면 `Content/` 파일을 바꿔야 해서).
 - 상주 서버는 요청받은 에셋의 패키지만 다시 읽습니다. 그 에셋이 참조하는 다른 에셋(예: 부모 BP)이 바뀐 경우, 그것이 메모리에서 정리(2분마다)되거나 직접 요청될 때까지 예전 값이 섞일 수 있습니다.
-- `age_animbp_overview`는 EventGraph와 함수 그래프를 요약하지 않습니다(이름과 노드 수만). BP 그래프 요약은 다음 단계 후보입니다.
+- 실행 흐름 요약에서 순수 노드는 쓰일 때마다 식으로 다시 펼쳐집니다(같은 `TryGetPawnOwner()`가 여러 줄에 나올 수 있음).
+- `variables[].default`는 CDO 값입니다. CDO에 그 변수가 없으면(예: 변수를 추가한 뒤 컴파일하지 않음) `FBPVariableDescription::DefaultValue` 문자열을 대신 씁니다. 시험한 에셋에서는 이 문자열이 모두 비어 있었습니다.
 - 나이아가라: 경량(Stateless) 이미터는 범용 리플렉션으로만 씁니다. 스크래치 패드 모듈은 이름만 스택에 나오고, 내용은 `graphs`에 있습니다. `defaults`는 이름만 있고 값은 없습니다(모듈 에셋 쪽 기본값).
 - 나이아가라 그래프는 큽니다(유체 시스템 `NS_HeatLaser_Fluid`의 JSON이 116만 자이고, 대부분이 노드 604개짜리 이미터 그래프입니다). `age_niagara_overview`부터 보고, 필요한 부분만 `select`로 꺼내세요.

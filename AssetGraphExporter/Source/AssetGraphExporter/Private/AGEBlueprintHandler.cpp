@@ -36,7 +36,8 @@ namespace
 		{ CPF_AdvancedDisplay, TEXT("AdvancedDisplay") },
 	};
 
-	TSharedRef<FJsonObject> WriteVariable(const FBPVariableDescription& Variable)
+	/** ClassDefaults is the "classDefaults" object (CDO values), or null when the Blueprint has no CDO. */
+	TSharedRef<FJsonObject> WriteVariable(const FBPVariableDescription& Variable, const FJsonObject* ClassDefaults)
 	{
 		TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
 		Json->SetStringField(TEXT("name"), Variable.VarName.ToString());
@@ -46,7 +47,19 @@ namespace
 		{
 			Json->SetStringField(TEXT("category"), Variable.Category.ToString());
 		}
-		if (!Variable.DefaultValue.IsEmpty())
+		// The value comes from the CDO, the same JSON value as in "classDefaults" (a variable the Blueprint added is
+		// always written there): in tested assets DefaultValue was empty while the CDO held the value.
+		// DefaultValue is used only when the CDO has no such property (e.g. the Blueprint was not compiled since).
+		TSharedPtr<FJsonValue> CdoValue;
+		if (ClassDefaults)
+		{
+			CdoValue = ClassDefaults->TryGetField(Variable.VarName.ToString());
+		}
+		if (CdoValue.IsValid())
+		{
+			Json->SetField(TEXT("default"), CdoValue);
+		}
+		else if (!Variable.DefaultValue.IsEmpty())
 		{
 			Json->SetStringField(TEXT("default"), Variable.DefaultValue);
 		}
@@ -178,29 +191,40 @@ void FAGEBlueprintHandler::Export(const UObject& Asset, FAGEExportContext& Conte
 	}
 	Section->SetArrayField(TEXT("interfaces"), Interfaces);
 
+	// Components, then the Class Defaults panel (CDO values that differ from the parent class), are written in this order
+	// before the variables so the variables can reuse the CDO values; the JSON keeps the order variables, components, classDefaults.
+	TArray<TSharedPtr<FJsonValue>> Components;
+	if (Blueprint.SimpleConstructionScript)
+	{
+		Components = WriteComponents(*Blueprint.SimpleConstructionScript, Context);
+	}
+	const UClass* GeneratedClass = Blueprint.GeneratedClass.Get();
+	const UObject* DefaultObject = GeneratedClass ? GeneratedClass->GetDefaultObject(false) : nullptr;
+	TSharedPtr<FJsonObject> ClassDefaults;
+	if (DefaultObject)
+	{
+		ClassDefaults = PropertyWriter.WriteObjectProperties(*DefaultObject);
+	}
+
 	TArray<TSharedPtr<FJsonValue>> Variables;
 	for (const FBPVariableDescription& Variable : Blueprint.NewVariables)
 	{
-		Variables.Add(MakeShared<FJsonValueObject>(WriteVariable(Variable)));
+		Variables.Add(MakeShared<FJsonValueObject>(WriteVariable(Variable, ClassDefaults.Get())));
 	}
 	Section->SetArrayField(TEXT("variables"), Variables);
 
 	if (Blueprint.SimpleConstructionScript)
 	{
-		Section->SetArrayField(TEXT("components"), WriteComponents(*Blueprint.SimpleConstructionScript, Context));
+		Section->SetArrayField(TEXT("components"), Components);
 	}
 
-	// Class Defaults panel: CDO values that differ from the parent class.
-	if (const UClass* GeneratedClass = Blueprint.GeneratedClass.Get())
+	if (ClassDefaults.IsValid())
 	{
-		if (const UObject* DefaultObject = GeneratedClass->GetDefaultObject(false))
-		{
-			Section->SetObjectField(TEXT("classDefaults"), PropertyWriter.WriteObjectProperties(*DefaultObject));
-		}
-		else
-		{
-			Context.Warn(TEXT("Generated class has no default object; classDefaults skipped."));
-		}
+		Section->SetObjectField(TEXT("classDefaults"), ClassDefaults);
+	}
+	else if (GeneratedClass)
+	{
+		Context.Warn(TEXT("Generated class has no default object; classDefaults skipped."));
 	}
 	else
 	{

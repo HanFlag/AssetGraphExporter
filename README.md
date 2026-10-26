@@ -7,7 +7,8 @@ AI 코딩 도구(Claude Code 등)가 Unreal 프로젝트의 바이너리 에셋(
 - **무엇을**: Blueprint, Animation Blueprint, StateTree, Niagara System을 비롯한 모든 UObject 에셋의 구조(변수, 그래프, 노드와 연결, 상태와 전환, 바인딩, 이미터 스택)를 JSON과 짧은 요약 글로 꺼냅니다.
 - **어떻게**: 커맨드렛으로 파일에 내보내거나, 함께 들어 있는 `AssetGraphExporterMcp`를 설치해 엔진 내장 Unreal MCP 서버의 도구(`age_*`)로 바로 묻습니다. 에디터가 켜져 있으면 에디터 안에서, 꺼져 있으면 상주 서버(`Serve.bat`)가 같은 주소로 대답합니다.
 - **원칙**: `.uasset`을 직접 해석하지 않고 엔진 API로 로드합니다. 에셋은 읽기만 하고 저장하는 코드가 없습니다. 프로젝트 이름·에셋 경로·게임 클래스가 코드에 없어서, 플러그인 폴더만 복사하면 다른 프로젝트에서 그대로 동작합니다.
-- **대상**: UE 5.8 (5.8.4, Win64에서 빌드와 동작 확인).
+- **대상**: UE 5.8 (5.8.4, Win64에서 빌드와 동작 확인). MCP 도구(`AssetGraphExporterMcp`)는 엔진에 들어 있는 Unreal MCP 플러그인(`ModelContextProtocol`, Experimental)이 필요합니다. StateTree·Niagara 처리기는 선택 사항으로, 그 플러그인이 없는 프로젝트에서는 빠집니다.
+- **라이선스**: [MIT](LICENSE). 무료로 쓰고, 고치고, 다시 배포할 수 있습니다(저작권 고지만 남기면 됨).
 
 ## 왜 쓰나 (측정으로 확인한 것)
 
@@ -34,7 +35,7 @@ AI 코딩 도구(Claude Code 등)가 Unreal 프로젝트의 바이너리 에셋(
 - 에셋 수정: 에디터가 켜져 있을 때의 수정은 내장 Unreal MCP가 이미 합니다. 이 플러그인은 읽기와 분석만 합니다.
 - 레벨(맵): 범용 속성만 나옵니다. 레벨 안의 액터를 읽는 일은 내장 Unreal MCP로 충분합니다.
 - 상주 서버 시작 비용: 엔진을 띄우므로 켜는 데 약 11초(재부팅 직후 첫 실행은 약 1분) 걸립니다. 켠 뒤 도구 호출은 대부분 수 ms~수백 ms입니다.
-- 그 밖의 한계는 [알려진 한계](#알려진-한계-010)에 있습니다.
+- 그 밖의 한계는 [알려진 한계](#알려진-한계-020)에 있습니다.
 
 ## 폴더 구조
 
@@ -285,7 +286,7 @@ UnrealEditor-Cmd.exe <Project>.uproject -run=AssetGraphServe [-IdleMinutes=30] [
 ```jsonc
 {
   "schemaVersion": 2,
-  "exporter": { "name": "AssetGraphExporter", "version": "0.1.0", "diffOnly": true },
+  "exporter": { "name": "AssetGraphExporter", "version": "0.2.0", "diffOnly": true },
   "engineVersion": "5.8.4",
   "asset": { "path": "/Game/Folder/BP_Thing.BP_Thing", "class": "/Script/Engine.Blueprint" },
   "handler": "Blueprint",          // 전용 처리기 이름 (없으면 생략)
@@ -512,7 +513,7 @@ UE 5.8은 이 정보를 노드의 `Binding` 객체(`UAnimGraphNodeBinding_Base::
 - 다른 프런트엔드(예: MCP 서버)에서는 `FAGEAssetExporter::ExportAsset`을 그대로 호출하면 됩니다.
 - 내보낸 JSON을 짧은 텍스트로 바꾸는 함수는 `AGE::Summary`(`AGESummary.h`), JSON 일부 선택·목차는 `AGE::JsonQuery`(`AGEJsonQuery.h`)에 있습니다. 둘 다 내보낸 JSON만 읽으므로 MCP 없이도 쓸 수 있습니다.
 
-## 알려진 한계 (0.1.0)
+## 알려진 한계 (0.2.0)
 
 - Blueprint의 상속 컴포넌트 오버라이드(`InheritableComponentHandler`)는 범용 `properties`에만 나옵니다.
 - Actor BP의 `components[].properties`는 컴포넌트 클래스 기본값과 비교한 차이입니다.
@@ -528,3 +529,7 @@ UE 5.8은 이 정보를 노드의 `Binding` 객체(`UAnimGraphNodeBinding_Base::
 - `variables[].default`는 CDO 값입니다. CDO에 그 변수가 없으면(예: 변수를 추가한 뒤 컴파일하지 않음) `FBPVariableDescription::DefaultValue` 문자열을 대신 씁니다. 시험한 에셋에서는 이 문자열이 모두 비어 있었습니다.
 - 나이아가라: 경량(Stateless) 이미터는 범용 리플렉션으로만 씁니다. 스크래치 패드 모듈은 이름만 스택에 나오고, 내용은 `graphs`에 있습니다. `defaults`는 이름만 있고 값은 없습니다(모듈 에셋 쪽 기본값).
 - 나이아가라 그래프는 큽니다(유체 시스템 `NS_HeatLaser_Fluid`의 JSON이 116만 자이고, 대부분이 노드 604개짜리 이미터 그래프입니다). `age_niagara_overview`부터 보고, 필요한 부분만 `select`로 꺼내세요.
+
+## 라이선스
+
+[MIT License](LICENSE) © 2026 HanFlag

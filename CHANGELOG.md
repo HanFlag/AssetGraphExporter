@@ -1,5 +1,15 @@
 # 변경 기록
 
+## 0.2.1 (베타) — 2026-10-27
+
+AI가 이 도구를 스스로 익히고, 문제를 사용자를 통해 알려 오게 했습니다.
+
+- **AI용 안내 `AI_GUIDE.md`**(영어, `AssetGraphExporterMcp/Resources/`): 처음에 사용자에게 알릴 것(무엇인지, 할 수 있는 것과 아직 못 하는 것, 확인 모드·자동 모드), 단계별 연결, 질문별 도구, 효율 규칙, 문제 해결, 피드백 부탁.
+- **`age_guide`**: 도구 설명에 "처음 쓸 때 먼저 부를 것"이 있어, 연결한 AI가 안내를 받습니다.
+- **`age_feedback`**: 문제나 필요한 기능을 사용자 PC(`Saved/AssetGraphExporter/Feedback/feedback.md`, `-AGEFeedbackDir=`로 변경)에 남기고, 내용이 채워진 GitHub 이슈 화면을 브라우저로 엽니다. 사용자가 확인하고 Submit을 누릅니다. 프로젝트 에셋 경로와 사용자 폴더 경로는 자동으로 지웁니다. 받는 곳은 플러그인의 `SupportURL`입니다.
+- `age_*` 도구가 실패하면 결과 끝에 "막혔다면 사용자에게 알리고 age_feedback으로 남겨 달라"는 한 줄이 붙습니다.
+- 에디터 모드에서 `age_find_usages`, `age_diff`, `age_blueprint_overview`, `age_statetree_overview`, `age_niagara_overview` 동작을 확인했습니다.
+
 ## 0.2.0 (베타) — 2026-10-27
 
 첫 공개 릴리즈입니다. 에셋 구조 내보내기(0.1.0)에 MCP 도구, 나이아가라 처리기, 프로젝트 전체 검색과 버전 비교를 더했습니다.
@@ -26,7 +36,7 @@
 ### 확인한 것과 아직 확인하지 않은 것
 - 확인: 한 프로젝트(UE 5.8.4, Win64)에서 빌드 경고 0, 모든 도구를 상주 서버 모드로 호출. 처음 7개 도구는 에디터 모드에서도 호출.
 - 아직: 다른 프로젝트, 다른 플랫폼. `age_references`·`age_find_usages`·`age_diff`·`age_blueprint_overview`의 에디터 모드. 에셋을 다시 저장한 뒤 상주 서버와 증분 내보내기가 새 내용을 읽는지(시험하려면 에셋을 바꿔야 해서).
-- 그 밖의 한계는 [알려진 한계](Documentation/Guide.md#알려진-한계-020)를 보세요.
+- 그 밖의 한계는 [알려진 한계](Documentation/Guide.md#알려진-한계)를 보세요.
 
 ### 라이선스
 [MIT](LICENSE).

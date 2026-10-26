@@ -1,7 +1,7 @@
 {
 	"FileVersion": 3,
-	"Version": 2,
-	"VersionName": "0.2.0",
+	"Version": 3,
+	"VersionName": "0.2.1",
 	"FriendlyName": "Asset Graph Exporter MCP",
 	"Description": "Adds Asset Graph Exporter tools (age_*) to the engine's Unreal MCP server, and a commandlet (AssetGraphServe) that keeps that server running without the editor.",
 	"Category": "Editor",
@@ -9,7 +9,7 @@
 	"CreatedByURL": "https://github.com/HanFlag",
 	"DocsURL": "https://github.com/HanFlag/AssetGraphExporter",
 	"MarketplaceURL": "",
-	"SupportURL": "",
+	"SupportURL": "https://github.com/HanFlag/AssetGraphExporter/issues/new",
 	"CanContainContent": false,
 	"IsBetaVersion": true,
 	"IsExperimentalVersion": false,

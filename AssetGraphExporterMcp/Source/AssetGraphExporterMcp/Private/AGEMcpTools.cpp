@@ -20,9 +20,12 @@
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
 #include "HAL/FileManager.h"
+#include "HAL/PlatformProcess.h"
 #include "HAL/PlatformTime.h"
+#include "Interfaces/IPluginManager.h"
 #include "Internationalization/Culture.h"
 #include "Internationalization/Internationalization.h"
+#include "Internationalization/Regex.h"
 #include "Misc/App.h"
 #include "Misc/AssetRegistryInterface.h"
 #include "Misc/CommandLine.h"
@@ -149,7 +152,8 @@ namespace AGE::McpToolsDetail
 
 	FModelContextProtocolToolResult ErrorResult(const FString& Text)
 	{
-		return UE::ModelContextProtocol::MakeErrorResult(Text);
+		// Every failure carries the feedback hint, so the assistant sees it exactly when a report is most useful.
+		return UE::ModelContextProtocol::MakeErrorResult(Text + TEXT("\n(If this blocks the task or looks wrong, tell the user and report it with age_feedback.)"));
 	}
 
 	// ---- Loading ----
@@ -917,6 +921,149 @@ namespace AGE::McpToolsDetail
 		return TextResult(FString::Join(Lines, TEXT("\n")));
 	}
 
+	// ---- Guide and feedback ----
+
+	const TCHAR* const McpPluginName = TEXT("AssetGraphExporterMcp");
+
+	FModelContextProtocolToolResult Guide(const FJsonObject& Arguments)
+	{
+		const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(McpPluginName);
+		const FString File = Plugin.IsValid() ? FPaths::Combine(Plugin->GetBaseDir(), TEXT("Resources"), TEXT("AI_GUIDE.md")) : FString();
+		FString Text;
+		if (File.IsEmpty() || !FFileHelper::LoadFileToString(Text, *File))
+		{
+			return UE::ModelContextProtocol::MakeErrorResult(FString::Printf(TEXT("AI_GUIDE.md was not found next to the plugin (%s)."), *File));
+		}
+		return TextResult(Text);
+	}
+
+	/** Folder for saved reports: -AGEFeedbackDir=<dir> on the command line, else <Project>/Saved/AssetGraphExporter/Feedback. */
+	FString FeedbackDir()
+	{
+		FString Dir;
+		if (!FParse::Value(FCommandLine::Get(), TEXT("AGEFeedbackDir="), Dir))
+		{
+			Dir = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("AssetGraphExporter"), TEXT("Feedback"));
+		}
+		return FPaths::ConvertRelativePathToFull(FPaths::ProjectDir(), Dir);
+	}
+
+	/** Project asset paths and user folders replaced by <path> in text that may leave the computer. /Script/ (engine and C++ classes) stays. */
+	FString Scrub(const FString& Text)
+	{
+		FString Result = Text;
+		for (const TCHAR* Pattern : { TEXT("/Game/[^\\s'\"(),;\\]]+"), TEXT("[A-Za-z]:[\\\\/]Users[\\\\/][^\\s'\"(),;]+") })
+		{
+			const FRegexPattern Regex(Pattern);
+			FRegexMatcher Matcher(Regex, Result);
+			TArray<TPair<int32, int32>> Spans;
+			while (Matcher.FindNext())
+			{
+				Spans.Emplace(Matcher.GetMatchBeginning(), Matcher.GetMatchEnding());
+			}
+			for (int32 Index = Spans.Num() - 1; Index >= 0; --Index)
+			{
+				Result = Result.Left(Spans[Index].Key) + TEXT("<path>") + Result.Mid(Spans[Index].Value);
+			}
+		}
+		return Result;
+	}
+
+	/** Percent-encoding of the UTF-8 bytes, for a URL query value. */
+	FString UrlEncode(const FString& Text)
+	{
+		const FTCHARToUTF8 Utf8(*Text);
+		FString Encoded;
+		for (int32 Index = 0; Index < Utf8.Length(); ++Index)
+		{
+			const uint8 Byte = static_cast<uint8>(Utf8.Get()[Index]);
+			if ((Byte >= '0' && Byte <= '9') || (Byte >= 'A' && Byte <= 'Z') || (Byte >= 'a' && Byte <= 'z') || Byte == '-' || Byte == '_' || Byte == '.' || Byte == '~')
+			{
+				Encoded.AppendChar(TCHAR(Byte));
+			}
+			else
+			{
+				Encoded += FString::Printf(TEXT("%%%02X"), Byte);
+			}
+		}
+		return Encoded;
+	}
+
+	FModelContextProtocolToolResult Feedback(const FJsonObject& Arguments)
+	{
+		const FString Summary = StringArgument(Arguments, TEXT("summary"));
+		if (Summary.IsEmpty())
+		{
+			return UE::ModelContextProtocol::MakeErrorResult(TEXT("'summary' is required: one line on what went wrong or what was missing."));
+		}
+		FString Kind = StringArgument(Arguments, TEXT("kind"));
+		if (Kind.IsEmpty())
+		{
+			Kind = TEXT("problem");
+		}
+		const FString Details = StringArgument(Arguments, TEXT("details"));
+		const FString Tool = StringArgument(Arguments, TEXT("tool"));
+		const bool bOpen = BoolArgument(Arguments, TEXT("open"), true);
+
+		const FString Title = Scrub(FString::Printf(TEXT("[%s] %s"), *Kind, *Summary));
+		TArray<FString> Body;
+		Body.Add(TEXT("### What happened"));
+		Body.Add(Scrub(Summary));
+		if (!Details.IsEmpty())
+		{
+			Body.Add(FString());
+			Body.Add(Scrub(Details));
+		}
+		Body.Add(FString());
+		Body.Add(TEXT("### Environment"));
+		Body.Add(FString::Printf(TEXT("- AssetGraphExporter %s, schema %d"), AGE::ExporterVersion, AGE::SchemaVersion));
+		Body.Add(FString::Printf(TEXT("- Unreal Engine %s"), *FEngineVersion::Current().ToString()));
+		Body.Add(FString::Printf(TEXT("- answered by: %s"), AGE::Mcp::IsServeMode() ? TEXT("background server") : TEXT("editor")));
+		if (!Tool.IsEmpty())
+		{
+			Body.Add(FString::Printf(TEXT("- tool: %s"), *Scrub(Tool)));
+		}
+		Body.Add(FString());
+		Body.Add(TEXT("_Prepared by an AI assistant with age_feedback. Asset paths were removed; please check the text before submitting._"));
+		const FString BodyText = FString::Join(Body, TEXT("\n"));
+
+		// Saved on this computer first, so nothing is lost if the page is not submitted.
+		const FString Dir = FeedbackDir();
+		const FString File = FPaths::Combine(Dir, TEXT("feedback.md"));
+		IFileManager::Get().MakeDirectory(*Dir, true);
+		const FString Entry = FString::Printf(TEXT("## %s UTC - %s\n\n%s\n\n"), *FDateTime::UtcNow().ToString(TEXT("%Y-%m-%d %H:%M:%S")), *Title, *BodyText);
+		const bool bSaved = FFileHelper::SaveStringToFile(Entry, *File, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM, &IFileManager::Get(), FILEWRITE_Append);
+
+		// The issue page comes from the plugin's SupportURL, so a fork reports to its own repository.
+		const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(McpPluginName);
+		const FString IssuesUrl = Plugin.IsValid() ? Plugin->GetDescriptor().SupportURL : FString();
+		TArray<FString> Lines;
+		Lines.Add(bSaved ? FString::Printf(TEXT("Saved to %s."), *File) : FString::Printf(TEXT("Could not save to %s."), *File));
+		if (IssuesUrl.IsEmpty())
+		{
+			Lines.Add(TEXT("The plugin has no SupportURL, so no issue page was opened. Show the user the saved report."));
+		}
+		else
+		{
+			// Stay well below common URL length limits; the full report is in the saved file.
+			FString Url = FString::Printf(TEXT("%s?title=%s&body=%s"), *IssuesUrl, *UrlEncode(Title), *UrlEncode(BodyText));
+			if (Url.Len() > 7500)
+			{
+				Url = FString::Printf(TEXT("%s?title=%s&body=%s"), *IssuesUrl, *UrlEncode(Title), *UrlEncode(BodyText.Left(1500) + TEXT("\n\n(cut; the full report is in feedback.md)")));
+			}
+			FString LaunchError;
+			if (bOpen)
+			{
+				FPlatformProcess::LaunchURL(*Url, nullptr, &LaunchError);
+			}
+			Lines.Add(!bOpen ? FString(TEXT("Issue page link (not opened):"))
+				: LaunchError.IsEmpty() ? FString(TEXT("Opened a prefilled GitHub issue page in the browser. Tell the user to review it and click Submit (it needs a GitHub account with access to the repository). Link:"))
+				: FString::Printf(TEXT("Could not open the browser (%s). Give the user this link:"), *LaunchError));
+			Lines.Add(Url);
+		}
+		return TextResult(FString::Join(Lines, TEXT("\n")));
+	}
+
 	FModelContextProtocolToolResult Status(const FJsonObject& Arguments)
 	{
 		TArray<FString> Lines;
@@ -958,6 +1105,26 @@ TArray<TSharedRef<IModelContextProtocolTool>> AGE::Mcp::CreateTools()
 	const TCHAR* AssetText = TEXT("Asset path, e.g. /Game/Folder/ST_Boss (the .ST_Boss suffix is optional).");
 
 	TArray<TSharedRef<IModelContextProtocolTool>> Tools;
+	Tools.Add(MakeShared<FTool>(TEXT("age_guide"),
+		TEXT("Call this first when you start using the age_* tools: how to use them well, what to tell the user (what the tools do, "
+			"confirm or auto edit mode), setup steps, troubleshooting, and how to report problems with age_feedback."),
+		FSchema().Build(),
+		&Guide));
+
+	Tools.Add(MakeShared<FTool>(TEXT("age_feedback"),
+		TEXT("Report a problem with the age_* tools, a wrong or oversized answer, or something the user needed that no tool could do. "
+			"Saves the report on the user's computer and opens a prefilled GitHub issue page for the user to review and submit. "
+			"Tell the user in one line before calling it. Describe what you tried, what happened and what you expected; "
+			"do not include the user's asset contents or code (project asset paths are removed automatically)."),
+		FSchema()
+			.Add(TEXT("summary"), TEXT("string"), TEXT("One line: what went wrong or what was missing."), true)
+			.Add(TEXT("kind"), TEXT("string"), TEXT("problem, wrong_result, too_large, missing_feature, guide or other. Default problem."))
+			.Add(TEXT("details"), TEXT("string"), TEXT("What you tried, what happened, what you expected. Optional."))
+			.Add(TEXT("tool"), TEXT("string"), TEXT("The age_* or built-in tool involved. Optional."))
+			.Add(TEXT("open"), TEXT("boolean"), TEXT("Open the issue page in the browser. Default true."))
+			.Build(),
+		&Feedback));
+
 	Tools.Add(MakeShared<FTool>(TEXT("age_find_assets"),
 		TEXT("Find assets in the Unreal project by name, folder and class without loading them. One line per asset: object path and class. "
 			"Use the paths with the other age_* tools."),

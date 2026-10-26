@@ -17,7 +17,5 @@ Scripts/LocalConfig.bat
 CLAUDE.md
 .claude/
 
-# Obsidian per-machine state (the Docs/ notes themselves are committed)
-Docs/.obsidian/workspace.json
-Docs/.obsidian/workspace-mobile.json
-Docs/.recorder-state.json
+# Memory bank (Obsidian vault): kept on this machine only
+Docs/

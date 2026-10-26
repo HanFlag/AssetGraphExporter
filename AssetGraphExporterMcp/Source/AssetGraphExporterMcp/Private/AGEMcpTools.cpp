@@ -5,8 +5,10 @@
 #include "AGEAssetExporter.h"
 #include "AGEExportCache.h"
 #include "AGEExportContext.h"
+#include "AGEJsonDiff.h"
 #include "AGEJsonQuery.h"
 #include "AGEMcpActivity.h"
+#include "AGEMcpRevision.h"
 #include "AGEMcpState.h"
 #include "AGESummary.h"
 #include "AGEUsages.h"
@@ -761,6 +763,160 @@ namespace AGE::McpToolsDetail
 		return TextResult(FString::Join(Lines, TEXT("\n")));
 	}
 
+	// ---- Revisions ----
+
+	/** The overview tool's text for an export, split into lines; empty for asset kinds without one. */
+	TArray<FString> OverviewLines(const FJsonObject& Export)
+	{
+		const FString Handler = HandlerOf(Export);
+		FString Text;
+		if (Handler == TEXT("Blueprint"))
+		{
+			Text = AGE::Summary::BlueprintOverview(Export);
+		}
+		else if (Handler == TEXT("AnimBlueprint"))
+		{
+			Text = AGE::Summary::AnimBlueprintOverview(Export);
+		}
+		else if (Handler == TEXT("StateTree"))
+		{
+			Text = AGE::Summary::StateTreeOverview(Export);
+		}
+		else if (Handler == TEXT("NiagaraSystem"))
+		{
+			Text = AGE::Summary::NiagaraOverview(Export);
+		}
+		TArray<FString> Lines;
+		Text.ParseIntoArrayLines(Lines, false);
+		return Lines;
+	}
+
+	/** Export of a loaded revision with its temporary package name put back to the original, so both sides compare equal where unchanged. */
+	TSharedPtr<FJsonObject> ExportRevision(const UObject& Asset, const FString& TempPackageName, const FString& PackageName)
+	{
+		FString Text = FAGEAssetExporter::ToJsonString(ExportAsset(Asset, false));
+		if (!TempPackageName.IsEmpty())
+		{
+			Text.ReplaceInline(*TempPackageName, *PackageName, ESearchCase::CaseSensitive);
+		}
+		TSharedPtr<FJsonObject> Json;
+		FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Text), Json);
+		return Json;
+	}
+
+	FModelContextProtocolToolResult Diff(const FJsonObject& Arguments)
+	{
+		FString From = StringArgument(Arguments, TEXT("from"));
+		if (From.IsEmpty())
+		{
+			From = TEXT("HEAD");
+		}
+		const FString To = StringArgument(Arguments, TEXT("to"));
+		const FString Detail = StringArgument(Arguments, TEXT("detail")).ToLower();
+		if (!Detail.IsEmpty() && Detail != TEXT("summary") && Detail != TEXT("json"))
+		{
+			return ErrorResult(TEXT("'detail' must be summary or json."));
+		}
+		const int32 Limit = FMath::Clamp(IntArgument(Arguments, TEXT("limit"), DefaultReferenceLimit), 1, MaxReferenceLimit);
+
+		// The current asset: the saved file (serve mode) or the editor's copy, as the other tools read it.
+		const FLoadedAsset Current = LoadAsset(StringArgument(Arguments, TEXT("asset")));
+		if (!Current.Asset)
+		{
+			return ErrorResult(Current.Error);
+		}
+		const FAssetData Data(Current.Asset);
+		const FString PackageName = Data.PackageName.ToString();
+
+		const AGE::Mcp::Revision::FLoaded Old = AGE::Mcp::Revision::Load(Data, From);
+		if (!Old.Asset)
+		{
+			AGE::Mcp::Revision::Release(Old);
+			return ErrorResult(Old.Error);
+		}
+		AGE::Mcp::Revision::FLoaded New;
+		if (To.IsEmpty())
+		{
+			New.Asset = Current.Asset;
+			New.Label = Current.Source;
+			New.Label.RemoveFromStart(TEXT("source: "));
+		}
+		else
+		{
+			New = AGE::Mcp::Revision::Load(Data, To);
+			if (!New.Asset)
+			{
+				AGE::Mcp::Revision::Release(Old);
+				AGE::Mcp::Revision::Release(New);
+				return ErrorResult(New.Error);
+			}
+		}
+
+		const TSharedPtr<FJsonObject> OldJson = ExportRevision(*Old.Asset, Old.TempPackageName, PackageName);
+		const TSharedPtr<FJsonObject> NewJson = ExportRevision(*New.Asset, New.TempPackageName, PackageName);
+		AGE::Mcp::Revision::Release(Old);
+		AGE::Mcp::Revision::Release(New);
+		if (!OldJson.IsValid() || !NewJson.IsValid())
+		{
+			return ErrorResult(TEXT("Could not read back an export for comparison."));
+		}
+
+		TArray<FString> Lines;
+		Lines.Add(FString::Printf(TEXT("source: %s vs %s"), *Old.Label, *New.Label));
+		Lines.Add(FString::Printf(TEXT("%s  [%s]"), *PackageName, *Data.AssetClassPath.GetAssetName().ToString()));
+
+		const TArray<FString> OldOverview = OverviewLines(*OldJson);
+		const TArray<FString> NewOverview = OverviewLines(*NewJson);
+		if (!OldOverview.IsEmpty() || !NewOverview.IsEmpty())
+		{
+			const TArray<FString> OverviewDiff = AGE::JsonDiff::DiffLines(OldOverview, NewOverview);
+			if (OverviewDiff.IsEmpty())
+			{
+				Lines.Add(TEXT("overview: no change"));
+			}
+			else
+			{
+				Lines.Add(TEXT("overview diff (- old, + new):"));
+				Lines.Append(OverviewDiff);
+			}
+		}
+
+		const TArray<AGE::JsonDiff::FChange> Changes = AGE::JsonDiff::Compare(
+			MakeShared<FJsonValueObject>(OldJson), MakeShared<FJsonValueObject>(NewJson));
+		int32 Changed = 0, Added = 0, Removed = 0;
+		for (const AGE::JsonDiff::FChange& Change : Changes)
+		{
+			Changed += Change.Kind == TEXT("changed") ? 1 : 0;
+			Added += Change.Kind == TEXT("added") ? 1 : 0;
+			Removed += Change.Kind == TEXT("removed") ? 1 : 0;
+		}
+		Lines.Add(FString::Printf(TEXT("json: %d changed, %d added, %d removed%s"), Changed, Added, Removed,
+			(Detail == TEXT("json") || Changes.IsEmpty()) ? TEXT("") : TEXT(" (detail=json lists them)")));
+		if (Detail == TEXT("json"))
+		{
+			for (const AGE::JsonDiff::FChange& Change : Changes)
+			{
+				if (Change.Kind == TEXT("changed"))
+				{
+					Lines.Add(FString::Printf(TEXT("  ~ %s: %s -> %s"), *Change.Path, *Change.Before, *Change.After));
+				}
+				else
+				{
+					Lines.Add(FString::Printf(TEXT("  %s %s: %s"), Change.Kind == TEXT("added") ? TEXT("+") : TEXT("-"), *Change.Path,
+						Change.Kind == TEXT("added") ? *Change.After : *Change.Before));
+				}
+			}
+		}
+
+		if (Lines.Num() > Limit)
+		{
+			const int32 Cut = Lines.Num() - Limit;
+			Lines.SetNum(Limit);
+			Lines.Add(FString::Printf(TEXT("... %d more lines. Raise limit."), Cut));
+		}
+		return TextResult(FString::Join(Lines, TEXT("\n")));
+	}
+
 	FModelContextProtocolToolResult Status(const FJsonObject& Arguments)
 	{
 		TArray<FString> Lines;
@@ -839,6 +995,21 @@ TArray<TSharedRef<IModelContextProtocolTool>> AGE::Mcp::CreateTools()
 			.Add(TEXT("limit"), TEXT("integer"), TEXT("Maximum lines, default 200, at most 2000."))
 			.Build(),
 		&FindUsages));
+
+	Tools.Add(MakeShared<FTool>(TEXT("age_diff"),
+		TEXT("What changed in an asset between a git revision and now (or between two revisions). The old file is taken from git "
+			"(Git LFS files from the local store only, nothing is downloaded) and loaded under a temporary package, like the editor's Diff tool. "
+			"For Blueprints, Animation Blueprints, StateTrees and Niagara Systems the overview texts are compared line by line (- old, + new); "
+			"for every asset the exported JSON is compared, with graph nodes paired by GUID. detail=json lists each changed JSON path. "
+			"The old revision is read with today's C++ classes, so members removed since then show as missing. Maps are not supported."),
+		FSchema()
+			.Add(TEXT("asset"), TEXT("string"), AssetText, true)
+			.Add(TEXT("from"), TEXT("string"), TEXT("Older git revision: a commit hash, HEAD~2, a branch. Default HEAD."))
+			.Add(TEXT("to"), TEXT("string"), TEXT("Newer git revision. Default: the current asset (saved file, or the editor's copy in the editor)."))
+			.Add(TEXT("detail"), TEXT("string"), TEXT("summary (default) or json."))
+			.Add(TEXT("limit"), TEXT("integer"), TEXT("Maximum lines, default 200, at most 2000."))
+			.Build(),
+		&Diff));
 
 	Tools.Add(MakeShared<FTool>(TEXT("age_get_asset"),
 		TEXT("Structure of one asset as compact JSON: properties, Blueprint variables/components/graphs (nodes, pins, links), AnimBP bindings, StateTree states and bindings, Niagara emitters and stacks. "

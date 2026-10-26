@@ -8,6 +8,7 @@ AI가 이 도구를 스스로 익히고, 문제를 사용자를 통해 알려 �
 - **`age_guide`**: 도구 설명에 "처음 쓸 때 먼저 부를 것"이 있어, 연결한 AI가 안내를 받습니다.
 - **`age_feedback`**: 문제나 필요한 기능을 사용자 PC(`Saved/AssetGraphExporter/Feedback/feedback.md`, `-AGEFeedbackDir=`로 변경)에 남기고, 내용이 채워진 GitHub 이슈 화면을 브라우저로 엽니다. 사용자가 확인하고 Submit을 누릅니다. 프로젝트 에셋 경로와 사용자 폴더 경로는 자동으로 지웁니다. 받는 곳은 플러그인의 `SupportURL`입니다.
 - `age_*` 도구가 실패하면 결과 끝에 "막혔다면 사용자에게 알리고 age_feedback으로 남겨 달라"는 한 줄이 붙습니다.
+- **라이선스**: MIT에서 [테스트용 라이선스](LICENSE)로 바꿨습니다. 초대받은 사람이 시험·피드백 용도로만 쓰고, 재배포·공개·판매는 금지입니다. 이전 커밋과 0.2.0의 MIT 표기는 누구에게도 배포되기 전에 바뀌었습니다.
 - 에디터 모드에서 `age_find_usages`, `age_diff`, `age_blueprint_overview`, `age_statetree_overview`, `age_niagara_overview` 동작을 확인했습니다.
 
 ## 0.2.0 (베타) — 2026-10-27
@@ -39,7 +40,7 @@ AI가 이 도구를 스스로 익히고, 문제를 사용자를 통해 알려 �
 - 그 밖의 한계는 [알려진 한계](Documentation/Guide.md#알려진-한계)를 보세요.
 
 ### 라이선스
-[MIT](LICENSE).
+MIT로 표기했으나 누구에게도 배포하기 전에 0.2.1의 테스트용 라이선스로 바뀌었습니다.
 
 ## 0.1.0 — 2026-10-23 (공개 안 함)
 - 커맨드렛 내보내기: 범용 리플렉션, Blueprint/AnimBP, StateTree.

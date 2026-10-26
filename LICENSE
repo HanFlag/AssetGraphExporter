@@ -1,21 +1,33 @@
-MIT License
+AssetGraphExporter Tester License
 
-Copyright (c) 2026 HanFlag
+Copyright (c) 2026 HanFlag. All rights reserved.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+This software (the source code, binaries and documentation in this repository and in its releases) is not open
+source. It is shared privately with people the copyright holder has invited to test it.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+1. Permission. If the copyright holder invited you to the repository, you may download, build, install and use the
+   software in your own Unreal Engine projects to test it and to give feedback. You may change it for your own
+   testing.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+2. Restrictions. You may not share, publish, redistribute, sublicense, sell or rent the software or any changed
+   version of it, in source or binary form, or let others do so.
+
+3. Your projects. Files the software produces from your own projects (exports, summaries, reports) are yours.
+
+4. Feedback. The copyright holder may use any feedback you give, without obligation to you.
+
+5. End. This permission ends when the copyright holder tells you so or replaces this license. When it ends, stop
+   using the software and delete your copies, except where a newer license given to you allows otherwise.
+
+6. No warranty. The software is provided "as is", without warranty of any kind, express or implied. In no event
+   shall the copyright holder be liable for any claim, damages or other liability arising from the software or
+   its use.
+
+Earlier commits and the 0.2.0 release carried the MIT License. They were replaced by this license before being
+given to anyone; this license applies to the whole repository and all of its releases.
+
+---
+
+요약(한국어): 저작권은 HanFlag에게 있습니다. 초대받은 사람은 시험하고 피드백하는 용도로 내려받아 쓰고 고칠 수
+있습니다. 다른 사람에게 나눠 주거나, 공개하거나, 팔 수 없습니다. 보증은 없습니다. 법적으로는 위 영어 본문이
+기준입니다.

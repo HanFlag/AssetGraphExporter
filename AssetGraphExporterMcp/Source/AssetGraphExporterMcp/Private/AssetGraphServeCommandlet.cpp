@@ -1,6 +1,7 @@
 // Asset Graph Exporter
 
 #include "AssetGraphServeCommandlet.h"
+#include "AGEMcpActivity.h"
 #include "AGEMcpState.h"
 #include "IModelContextProtocolModule.h"
 #include "ModelContextProtocolSettings.h"
@@ -77,6 +78,7 @@ int32 UAssetGraphServeCommandlet::Main(const FString& Params)
 	{
 		Mcp.StartServer(Port, UrlPath);
 	}
+	AGE::Mcp::Activity::EnsurePage();
 	UE_LOG(LogAssetGraphExporterMcp, Display, TEXT("MCP server ready: http://127.0.0.1:%u%s (%d top-level tools). Stop with age_shutdown or Ctrl+C%s."),
 		Port, *UrlPath, Mcp.GetTools().Num(),
 		IdleMinutes > 0 ? *FString::Printf(TEXT(", or it stops after %d idle minutes"), IdleMinutes) : TEXT(""));

@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude 활동</title>
+<style>
+:root {
+  --bg: #f6f5f2;
+  --panel: #ffffff;
+  --text: #22201c;
+  --muted: #6f6a62;
+  --line: #e4e0d8;
+  --accent: #c2592f;
+  --tool: #2f6fb0;
+  --engine: #7a7368;
+  --ok: #2e7d4f;
+  --error: #b3261e;
+  --chip: #efece6;
+  --flash: #fff1d6;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1b1a18;
+    --panel: #24221f;
+    --text: #ece8e1;
+    --muted: #a39d93;
+    --line: #36332e;
+    --accent: #e0835a;
+    --tool: #7fb2e5;
+    --engine: #a39d93;
+    --ok: #6cc28f;
+    --error: #f08a80;
+    --chip: #2f2c28;
+    --flash: #3a2f1c;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.5 system-ui, "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+}
+header {
+  position: sticky; top: 0;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+  padding: 14px 16px 10px;
+}
+.title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+h1 { margin: 0; font-size: 18px; font-weight: 650; }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ok); }
+.dot.off { background: var(--error); }
+.badge { font-size: 12px; padding: 1px 8px; border-radius: 999px; background: var(--chip); color: var(--muted); }
+.sub { margin-top: 4px; color: var(--muted); font-size: 12.5px; }
+main { max-width: 920px; margin: 0 auto; padding: 8px 16px 40px; }
+ol { list-style: none; margin: 0; padding: 0; }
+li {
+  display: grid; grid-template-columns: 64px 1fr; gap: 10px;
+  padding: 9px 10px; border-bottom: 1px solid var(--line);
+  border-radius: 6px;
+  transition: background-color 1.6s ease;
+}
+li.new { background: var(--flash); }
+.time { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12.5px; padding-top: 1px; }
+.what { font-weight: 600; }
+.what.tool { color: var(--tool); }
+.what.engine { color: var(--engine); font-weight: 500; }
+.what.connect { color: var(--accent); }
+.target { margin-left: 6px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 3px; }
+.chip { font-size: 12px; padding: 0 7px; border-radius: 5px; background: var(--chip); color: var(--muted); }
+.line { margin-top: 3px; color: var(--muted); font-size: 12.5px; font-family: ui-monospace, Consolas, monospace; overflow-wrap: anywhere; }
+.error { margin-top: 3px; color: var(--error); font-size: 12.5px; overflow-wrap: anywhere; }
+.empty { color: var(--muted); padding: 28px 4px; }
+footer { color: var(--muted); font-size: 12px; padding: 16px 4px; }
+code { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+@media (prefers-reduced-motion: reduce) { li { transition: none; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="title">
+    <span class="dot" id="dot" title="서버 연결 상태"></span>
+    <h1>Claude 활동</h1>
+    <span class="badge" id="project">…</span>
+    <span class="badge" id="mode">…</span>
+  </div>
+  <div class="sub" id="counts">아직 기록이 없습니다.</div>
+</header>
+<main>
+  <ol id="list"></ol>
+  <div class="empty" id="empty">Claude가 MCP로 무언가를 확인하면 여기에 한 줄씩 나타납니다.</div>
+  <footer>
+    기록은 이 서버의 메모리에만 있고(최근 200개), 서버가 꺼지면 사라집니다.
+    엔진 내장 도구는 이름만 보입니다. <code>call_tool</code> 안에서 실제로 부른 도구 이름은 엔진 로그에 남지 않습니다.
+  </footer>
+</main>
+<script>
+"use strict";
+const TOOL_LABELS = {
+  age_find_assets: "에셋 찾기",
+  age_get_asset: "에셋 구조 읽기",
+  age_statetree_overview: "StateTree 요약",
+  age_statetree_bindings: "StateTree 바인딩",
+  age_animbp_overview: "애님 블루프린트 요약",
+  age_niagara_overview: "나이아가라 요약",
+  age_status: "상태 확인",
+  age_shutdown: "서버 종료 요청",
+};
+const ENGINE_LABELS = {
+  list_toolsets: "엔진 도구 목록 보기",
+  describe_toolset: "엔진 도구 설명 보기",
+  call_tool: "엔진 도구 실행",
+};
+const SOURCE_LABELS = {
+  file: "저장된 파일",
+  editor: "에디터",
+  editorUnsaved: "에디터 (저장 안 한 변경 포함)",
+};
+
+const list = document.getElementById("list");
+const empty = document.getElementById("empty");
+const dot = document.getElementById("dot");
+let last = 0;
+let ageCalls = 0;
+let engineCalls = 0;
+
+function shortAsset(path) {
+  const name = path.split("/").pop();
+  const cut = name.indexOf(".");
+  return cut > 0 ? name.slice(0, cut) : name;
+}
+
+function targetText(entry) {
+  const a = entry.args || {};
+  const parts = [];
+  if (a.asset) parts.push(shortAsset(a.asset));
+  if (a.select) parts.push("· " + a.select);
+  if (a.name) parts.push("이름에 \"" + a.name + "\"");
+  if (a.class) parts.push("클래스 " + a.class);
+  if (a.path && entry.tool === "age_find_assets") parts.push("폴더 " + a.path);
+  if (a.filter) parts.push("· \"" + a.filter + "\"");
+  if (a.full) parts.push("· 기본값 포함");
+  return parts.join(" ");
+}
+
+function sizeText(chars) {
+  return chars >= 1000 ? (chars / 1000).toFixed(1) + "K자" : chars + "자";
+}
+
+function el(tag, cls, text) {
+  const node = document.createElement(tag);
+  if (cls) node.className = cls;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function render(entry) {
+  const item = el("li", "new");
+  item.appendChild(el("div", "time", entry.time));
+  const body = el("div");
+  let what;
+  if (entry.kind === "tool") {
+    ageCalls++;
+    what = el("span", "what tool", TOOL_LABELS[entry.tool] || entry.tool);
+  } else if (entry.kind === "engineTool") {
+    engineCalls++;
+    what = el("span", "what engine", ENGINE_LABELS[entry.tool] || ("엔진 도구 " + entry.tool));
+  } else {
+    what = el("span", "what connect", "AI가 연결했습니다");
+  }
+  body.appendChild(what);
+  const target = targetText(entry);
+  if (target) body.appendChild(el("span", "target", target));
+
+  const chips = el("div", "chips");
+  if (entry.source) chips.appendChild(el("span", "chip", SOURCE_LABELS[entry.source] || entry.source));
+  if (entry.chars) chips.appendChild(el("span", "chip", sizeText(entry.chars)));
+  if (entry.ms !== undefined) chips.appendChild(el("span", "chip", entry.ms + "ms"));
+  if (chips.childNodes.length) body.appendChild(chips);
+  if (entry.line) body.appendChild(el("div", "line", entry.line));
+  if (entry.error) body.appendChild(el("div", "error", entry.error));
+
+  item.appendChild(body);
+  list.insertBefore(item, list.firstChild);
+  requestAnimationFrame(() => setTimeout(() => item.classList.remove("new"), 50));
+}
+
+function updateHeader(data) {
+  document.getElementById("project").textContent = data.project || "";
+  document.getElementById("mode").textContent = data.mode === "serve" ? "상주 서버 (저장된 파일)" : "에디터";
+  const total = ageCalls + engineCalls;
+  document.getElementById("counts").textContent = total === 0
+    ? "아직 기록이 없습니다."
+    : "이 플러그인 도구 " + ageCalls + "번 · 엔진 내장 도구 " + engineCalls + "번";
+}
+
+async function poll() {
+  try {
+    const response = await fetch("?after=" + last, { cache: "no-store" });
+    const data = await response.json();
+    dot.classList.remove("off");
+    dot.title = "서버 연결됨";
+    if (data.last < last) {
+      // The server was restarted: its numbering starts again.
+      list.textContent = "";
+      last = 0;
+      ageCalls = 0;
+      engineCalls = 0;
+      return;
+    }
+    for (const entry of data.entries) {
+      render(entry);
+      last = Math.max(last, entry.id);
+    }
+    empty.style.display = list.childNodes.length ? "none" : "";
+    updateHeader(data);
+  } catch (e) {
+    dot.classList.add("off");
+    dot.title = "서버 연결 끊김 (꺼졌거나 다시 시작하는 중)";
+  }
+}
+
+poll();
+setInterval(poll, 1000);
+</script>
+</body>
+</html>

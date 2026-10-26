@@ -1,7 +1,7 @@
 # AssetGraphExporter
 
 에디터 창을 열지 않고 Unreal 에셋의 구조를 JSON으로 내보내는 에디터 플러그인입니다.
-Blueprint, Animation Blueprint, StateTree를 비롯해 어떤 UObject 에셋이든 처리합니다.
+Blueprint, Animation Blueprint, StateTree, Niagara System을 비롯해 어떤 UObject 에셋이든 처리합니다.
 에디터를 끈 상태에서도 AI 코딩 도구(Claude Code 등)가 BP 그래프나 StateTree 구조를 읽을 수 있게 하는 것이 목적입니다.
 
 - `.uasset` 바이너리를 직접 파싱하지 않습니다. 엔진이 에셋을 로드하는 커맨드렛(`UCommandlet`)으로 동작합니다.
@@ -18,9 +18,11 @@ AssetGraphExporter/            ← 저장소
     AssetGraphExporter.uplugin
     Source/AssetGraphExporter/            범용 처리 + Blueprint/AnimBP + 커맨드렛 + 요약 (Editor 모듈)
     Source/AssetGraphExporterStateTree/   StateTree 처리기 (Editor 모듈)
+    Source/AssetGraphExporterNiagara/     Niagara System 처리기 (Editor 모듈)
   AssetGraphExporterMcp/       ← MCP 연결 플러그인 (선택 설치, Unreal MCP 엔진 플러그인 필요)
     AssetGraphExporterMcp.uplugin
-    Source/AssetGraphExporterMcp/         age_* 도구 + 상주 커맨드렛 AssetGraphServe (Editor 모듈)
+    Source/AssetGraphExporterMcp/         age_* 도구 + 상주 커맨드렛 AssetGraphServe + 활동 창 (Editor 모듈)
+    Resources/Activity.html               활동 창 페이지
   Scripts/                     빌드·실행용 배치 파일
   Packaged/                    Build.bat 결과물 (git 무시)
   Logs/                        빌드·실행 로그 (git 무시)
@@ -50,6 +52,8 @@ StateTree 처리기 모듈은 `StateTree` 플러그인에 의존하며, 이 의�
 - Optional은 "플러그인 파일이 없으면 무시"라는 뜻입니다.
 - StateTree는 엔진에 기본으로 들어 있습니다. 따라서 이 플러그인을 넣으면 StateTree를 안 쓰는 프로젝트에서도 에디터에서는 StateTree가 함께 켜집니다.
 - `TargetAllowList: Editor`를 걸어 두었기 때문에 게임 빌드에는 영향이 없습니다.
+
+나이아가라 처리기 모듈(`AssetGraphExporterNiagara`)도 같은 방식으로 `Niagara` 플러그인에 Optional로 의존합니다. 나이아가라는 엔진 기본으로 켜져 있는 플러그인(`EnabledByDefault: true`)이라, 이 의존성 때문에 새로 켜지는 것은 없습니다.
 
 ## 사용법
 
@@ -114,6 +118,7 @@ Claude Code ──→ 127.0.0.1:8000/mcp
 | `age_statetree_overview` | 상태 트리 요약: 상태 계층, 진입 조건, 태스크, 전환(대상, 트리거, 조건)을 한 줄씩 |
 | `age_statetree_bindings` | 바인딩을 `원본 -> 대상` 한 줄씩. `filter`로 거르기 |
 | `age_animbp_overview` | AnimBP 요약: 변수, AnimGraph 포즈 흐름, 스테이트 머신의 상태별 포즈와 전환 규칙(식으로) |
+| `age_niagara_overview` | 나이아가라 요약: 사용자 파라미터, 시스템 스택, 이미터마다 실행 순서대로 모든 스택(이벤트 핸들러, **Simulation Stage** 포함)의 모듈과 설정한 입력값, 렌더러 |
 | `age_status` | 지금 대답하는 쪽(에디터 / 상주 서버), 프로젝트, 엔진·플러그인 버전 |
 | `age_shutdown` | 상주 서버 끄기 (에디터 안에서는 아무것도 하지 않음) |
 
@@ -125,6 +130,18 @@ StateMachine Main
   state Locomotion: BS2D_BossMoveLocomotion Blendspace Player(X=Direction, Y=Speed2D)
   CombatMove -> TurnInPlace if (bIsCombatMove AND (Speed2D < 10) AND (Abs(AimTurnRate) > 20))
 ```
+
+### 활동 창 (Claude가 MCP로 한 일 보기)
+
+MCP 서버와 같은 주소에 작은 페이지가 붙습니다: `http://127.0.0.1:8000/age/activity` (포트는 MCP 설정을 따름).
+에디터 모드와 상주 서버 모드 모두 같은 페이지입니다. 1초마다 새 항목이 위에 추가됩니다.
+
+- `age_*` 호출: 무엇을 했는지(예: "StateTree 요약 ST_Boss"), 저장된 파일·에디터 중 어디서 읽었는지, 결과 길이, 걸린 시간, 오류.
+- 엔진 내장 도구: 이름과 시각만. Unreal MCP 서버가 호출마다 남기는 로그 한 줄(`Running tool: '...'`, `ModelContextProtocolServer.cpp`)을 받아 씁니다. `call_tool` 안에서 실제로 부른 도구 이름은 이 로그에 없어서 보이지 않습니다.
+- AI 클라이언트가 새로 연결하면(`Session initialized`) 한 줄 남깁니다.
+- 처음 연결되거나 도구를 처음 부를 때 기본 브라우저로 한 번 열립니다. 끄려면 콘솔 변수 `AGE.ActivityWindow 0` 또는 실행 인자 `-AGENoActivityWindow`. 직접 열기: 콘솔 명령 `AGE.OpenActivity`.
+- 기록은 메모리에만 있습니다(최근 200개). 파일을 쓰지 않고, 서버가 꺼지면 사라집니다.
+- 페이지는 MCP 서버와 같은 HTTP 서버(같은 포트)에서 나가므로, 접근 범위도 MCP 서버와 같습니다.
 
 ### 상주 서버 (`Serve.bat`, 커맨드렛 `AssetGraphServe`)
 
@@ -187,6 +204,7 @@ UnrealEditor-Cmd.exe <Project>.uproject -run=AssetGraphServe [-IdleMinutes=30] [
   "properties": { },               // 에셋 자체의 UPROPERTY (범용 리플렉션)
   "blueprint": { },                // 처리기가 추가하는 섹션 (Blueprint / AnimBlueprint)
   "stateTree": { },                // 〃 (StateTree)
+  "niagara": { },                  // 〃 (Niagara System)
   "warnings": [ "..." ]            // 중단되지는 않았지만 문제가 있었던 것
 }
 ```
@@ -350,6 +368,50 @@ UE 5.8은 이 정보를 노드의 `Binding` 객체(`UAnimGraphNodeBinding_Base::
 - 그 밖에 트리 밖에 있는 것(프로퍼티 함수 등)은 엔진이 붙인 표시 이름입니다.
 - `path`가 빈 문자열이면 그 구조체나 객체 전체를 바인딩했다는 뜻입니다. 예: Actor 자체를 태스크 입력에 연결한 경우.
 
+### `niagara`
+
+스택은 엔진의 스택 화면 모델(`FNiagaraSystemViewModel`)을 만들지 않고, 스크립트 그래프를 직접 따라가서 읽습니다.
+스택마다 출력 노드가 하나 있고(사용처: 이미터·파티클 스폰/업데이트, 이벤트 핸들러, Simulation Stage마다 하나), 거기서 파라미터 맵 연결을 거꾸로 따라가면 모듈 순서가 나옵니다. 에디터 스택과 같은 규칙입니다.
+
+```jsonc
+{
+  "userParameters": [ { "name": "User.WorldSpaceSize", "type": "Vector3f", "value": "(200,200,350)" } ],
+  "system": { "stacks": [ /* SystemSpawn, SystemUpdate */ ] },
+  "emitters": [ {
+    "name": "Grid3D_Gas_Master_Emitter", "id": "...", "simTarget": "GPU",   // CPU | GPU
+    "parent": "/NiagaraFluids/...", "mode": "Stateless",                     // mode는 경량 이미터만
+    "settings": { },                   // 이미터 설정 중 기본값과 다른 것
+    "stacks": [ {
+      "usage": "SimulationStage",      // EmitterSpawn | EmitterUpdate | ParticleSpawn | ParticleUpdate | Event | SimulationStage
+      "name": "Advect Density",        // 이벤트 핸들러·Simulation Stage만
+      "iterationSource": "DataInterface", "dataInterface": "Emitter.ScalarGrid", "iterations": "1",
+      "modules": [ {
+        "name": "Grid3D_SetResolution", "script": "/NiagaraFluids/...", "node": "<guid>",
+        "kind": "scratchPad",            // scratchPad | setParameters | customHlsl (일반 모듈은 생략)
+        "enabled": false,                // 꺼진 모듈만
+        "switches": [ { "name": "Lifetime Mode", "value": "NewEnumerator1", "displayName": "Random" } ],
+        "inputs": [
+          { "name": "Color", "type": "LinearColor", "value": "(8,4,1,1)" },          // 직접 넣은 값
+          { "name": "Position", "linked": "User.BeamEnd" },                            // 다른 파라미터에 연결
+          { "name": "Beam Width", "dynamic": { "name": "FloatFromCurve002", ... } },   // 동적 입력 (같은 형식으로 중첩)
+          { "name": "Grid", "dataInterface": { "$class": "...", ... } },               // 데이터 인터페이스
+          { "name": "Lifetime", "value": "2", "inactive": true }                       // 설정했지만 스위치 때문에 지금은 숨겨진 입력
+        ],
+        "defaults": [ "Mass", "Drag" ]    // 화면에 보이지만 아무도 바꾸지 않은 입력 (이름만)
+      } ],
+      "properties": { }                // 이벤트 핸들러·Simulation Stage 설정 중 기본값과 다른 것
+    } ],
+    "renderers": [ { "$class": "/Script/Niagara.NiagaraSpriteRendererProperties", ... } ]
+  } ],
+  "graphs": [ /* 시스템·이미터·스크래치 패드 그래프 원본 (위 "그래프, 노드, 핀" 형식) */ ]
+}
+```
+
+- 입력값은 두 곳에서 읽습니다. 연결·동적 입력·데이터 인터페이스는 모듈 앞 오버라이드 노드의 핀에서, 직접 넣은 상수는 스크립트의 `RapidIterationParameters`에서 읽습니다(이름 규칙은 엔진의 `FNiagaraUtilities::CreateRapidIterationConstantName`).
+- `defaults`와 `inactive`는 엔진 스택 코드의 입력 목록 함수(`FNiagaraStackGraphUtilities::GetStackFunctionInputs`, `GetStackFunctionStaticSwitchPins`)로 만듭니다. 지금 스위치 값 때문에 숨겨진 입력은 `defaults`에 넣지 않습니다.
+- enum 값은 내부 이름(`NewEnumerator1`)과 함께, 다를 때 에디터에 보이는 이름을 `displayName`으로 씁니다.
+- 함수 호출 노드의 `CachedChangeId`는 에셋을 불러올 때마다 바뀌는 값이라 그래프에서 뺍니다. 그래서 같은 에셋은 매번 같은 JSON이 나옵니다.
+
 ## 확장: 새 에셋 타입 처리기
 
 1. `IAGEAssetHandler`를 구현합니다.
@@ -371,3 +433,5 @@ UE 5.8은 이 정보를 노드의 `Binding` 객체(`UAnimGraphNodeBinding_Base::
 - 상주 서버의 "다시 저장된 에셋 다시 읽기"는 아직 실제로 시험하지 않았습니다(시험하려면 `Content/` 파일을 바꿔야 해서).
 - 상주 서버는 요청받은 에셋의 패키지만 다시 읽습니다. 그 에셋이 참조하는 다른 에셋(예: 부모 BP)이 바뀐 경우, 그것이 메모리에서 정리(2분마다)되거나 직접 요청될 때까지 예전 값이 섞일 수 있습니다.
 - `age_animbp_overview`는 EventGraph와 함수 그래프를 요약하지 않습니다(이름과 노드 수만). BP 그래프 요약은 다음 단계 후보입니다.
+- 나이아가라: 경량(Stateless) 이미터는 범용 리플렉션으로만 씁니다. 스크래치 패드 모듈은 이름만 스택에 나오고, 내용은 `graphs`에 있습니다. `defaults`는 이름만 있고 값은 없습니다(모듈 에셋 쪽 기본값).
+- 나이아가라 그래프는 큽니다(유체 시스템 `NS_HeatLaser_Fluid`의 JSON이 116만 자이고, 대부분이 노드 604개짜리 이미터 그래프입니다). `age_niagara_overview`부터 보고, 필요한 부분만 `select`로 꺼내세요.

@@ -12,3 +12,12 @@ Scripts/LocalConfig.bat
 # IDE
 .vs/
 .idea/
+
+# Claude Code: working rules and the memory-bank recorder stay on this machine
+CLAUDE.md
+.claude/
+
+# Obsidian per-machine state (the Docs/ notes themselves are committed)
+Docs/.obsidian/workspace.json
+Docs/.obsidian/workspace-mobile.json
+Docs/.recorder-state.json

@@ -3,7 +3,7 @@
 	"Version": 1,
 	"VersionName": "0.1.0",
 	"FriendlyName": "Asset Graph Exporter",
-	"Description": "Exports the structure of Blueprints, Animation Blueprints, StateTrees and other assets to JSON from a commandlet, without opening the editor UI.",
+	"Description": "Exports the structure of Blueprints, Animation Blueprints, StateTrees, Niagara systems and other assets to JSON from a commandlet, without opening the editor UI.",
 	"Category": "Editor",
 	"CreatedBy": "",
 	"CreatedByURL": "",
@@ -24,6 +24,11 @@
 			"Name": "AssetGraphExporterStateTree",
 			"Type": "Editor",
 			"LoadingPhase": "Default"
+		},
+		{
+			"Name": "AssetGraphExporterNiagara",
+			"Type": "Editor",
+			"LoadingPhase": "Default"
 		}
 	],
 	"Plugins": [
@@ -37,6 +42,14 @@
 		},
 		{
 			"Name": "PropertyBindingUtils",
+			"Enabled": true,
+			"Optional": true,
+			"TargetAllowList": [
+				"Editor"
+			]
+		},
+		{
+			"Name": "Niagara",
 			"Enabled": true,
 			"Optional": true,
 			"TargetAllowList": [

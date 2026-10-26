@@ -23,4 +23,10 @@ namespace AGE::Summary
 	 * Needs the "blueprint" section; other graphs (EventGraph, functions) are only counted.
 	 */
 	ASSETGRAPHEXPORTER_API FString AnimBlueprintOverview(const FJsonObject& Export);
+
+	/**
+	 * User parameters, system stacks, then each emitter: settings, every stack in execution order (simulation stages included)
+	 * with one line per module and the inputs that were set, and renderers. Needs the "niagara" section.
+	 */
+	ASSETGRAPHEXPORTER_API FString NiagaraOverview(const FJsonObject& Export);
 }

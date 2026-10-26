@@ -21,6 +21,9 @@ public class AssetGraphExporterMcp : ModuleRules
 			// Unreal MCP (engine plugin, Experimental): the server our tools are added to.
 			"ModelContextProtocol",
 			"ModelContextProtocolEngine",
+			// Activity page served next to the MCP endpoint, and the plugin folder it is read from.
+			"HTTPServer",
+			"Projects",
 		});
 	}
 }

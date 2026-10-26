@@ -1,0 +1,5 @@
+{
+  "folder": "log",
+  "format": "YYYY-MM-DD",
+  "template": "템플릿/진행 기록"
+}

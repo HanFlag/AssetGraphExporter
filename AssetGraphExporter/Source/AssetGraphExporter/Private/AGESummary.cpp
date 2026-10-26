@@ -869,6 +869,325 @@ namespace AGE::SummaryDetail
 			Lines.Add(Line);
 		}
 	}
+
+	// ---- Niagara ----
+
+	/** Longest custom HLSL shown inline in a module line. */
+	constexpr int32 MaxInlineHlslLength = 100;
+	/** Names of inputs left at their default, shown at the end of a module line before "+N more". */
+	constexpr int32 MaxInlineDefaults = 6;
+	/** Renderers get one line each, so they may show more of their settings. */
+	constexpr int32 MaxRendererSettingsLength = 300;
+
+	/** "/Script/Niagara.NiagaraMeshRendererProperties" -> "Mesh" (Suffix "RendererProperties"), "...NiagaraDataInterfaceGrid3DCollection" -> "Grid3DCollection" */
+	FString NiagaraClassLabel(const FString& ClassPath, const TCHAR* Suffix)
+	{
+		FString Name = ShortName(ClassPath);
+		Name.RemoveFromStart(TEXT("NiagaraDataInterface"));
+		Name.RemoveFromStart(TEXT("Niagara"));
+		if (Suffix)
+		{
+			Name.RemoveFromEnd(Suffix);
+		}
+		return Name;
+	}
+
+	/** An owned object's settings without "$class"/"$name": inline when short, otherwise only counted. */
+	FString ObjectSettings(const FJsonObject& Object, int32 MaxLength = MaxInlineSettingsLength)
+	{
+		const TSharedRef<FJsonObject> Settings = MakeShared<FJsonObject>();
+		for (const auto& Pair : Object.Values)
+		{
+			const FString Key(*Pair.Key);
+			if (!Key.StartsWith(TEXT("$")))
+			{
+				Settings->SetField(Key, Pair.Value);
+			}
+		}
+		if (Settings->Values.Num() == 0)
+		{
+			return FString();
+		}
+		const FString Text = Condensed(MakeShared<FJsonValueObject>(Settings));
+		return Text.Len() <= MaxLength ? Text : FString::Printf(TEXT("{%d settings}"), Settings->Values.Num());
+	}
+
+	/** Custom HLSL on one line, with runs of whitespace collapsed. */
+	FString CollapseWhitespace(const FString& Text)
+	{
+		FString Result;
+		Result.Reserve(Text.Len());
+		bool bPendingSpace = false;
+		for (const TCHAR Char : Text)
+		{
+			if (FChar::IsWhitespace(Char))
+			{
+				bPendingSpace = !Result.IsEmpty();
+				continue;
+			}
+			if (bPendingSpace)
+			{
+				Result.AppendChar(TEXT(' '));
+				bPendingSpace = false;
+			}
+			Result.AppendChar(Char);
+		}
+		return Result;
+	}
+
+	FString NiagaraModuleText(const FJsonObject& Module, bool bModule);
+
+	/** "Name=value", where the value is a constant, a linked parameter, a dynamic input, a data interface or an object. */
+	FString NiagaraInputText(const FJsonObject& Input)
+	{
+		FString Value;
+		if (Input.TryGetStringField(TEXT("displayName"), Value))
+		{
+			// Enum values: the name the editor shows (e.g. "Self") rather than NewEnumerator1.
+			Value = Literal(Value);
+		}
+		else if (Input.TryGetStringField(TEXT("value"), Value))
+		{
+			Value = Literal(Value);
+		}
+		else if (Input.TryGetStringField(TEXT("linked"), Value))
+		{
+		}
+		else if (const FJsonObject* Dynamic = ObjectField(Input, TEXT("dynamic")))
+		{
+			Value = NiagaraModuleText(*Dynamic, false);
+			const FString Output = StringField(*Dynamic, TEXT("output"));
+			if (!Output.IsEmpty())
+			{
+				Value += TEXT(".") + Output;
+			}
+		}
+		else if (const FJsonObject* DataInterface = ObjectField(Input, TEXT("dataInterface")))
+		{
+			Value = NiagaraClassLabel(StringField(*DataInterface, TEXT("$class")), nullptr) + ObjectSettings(*DataInterface);
+		}
+		else if (Input.TryGetStringField(TEXT("object"), Value))
+		{
+			Value = ShortName(Value);
+		}
+		else if (Input.TryGetStringField(TEXT("linkedNode"), Value))
+		{
+			Value = TEXT("<") + Value + TEXT(">");
+		}
+		else
+		{
+			Value = TEXT("?");
+		}
+		FString Text = StringField(Input, TEXT("name")) + TEXT("=") + Value;
+		if (BoolField(Input, TEXT("inactive"), false))
+		{
+			Text += TEXT(" (inactive: hidden by a switch)");
+		}
+		return Text;
+	}
+
+	/**
+	 * "Module(Switch=x, Input=value, ...)"; dynamic inputs use the same form inside the parentheses.
+	 * Only modules (not dynamic inputs) list the inputs left at their default, to keep lines short.
+	 */
+	FString NiagaraModuleText(const FJsonObject& Module, bool bModule)
+	{
+		TArray<FString> Parts;
+		const FString Kind = StringField(Module, TEXT("kind"));
+		if (Kind == TEXT("customHlsl"))
+		{
+			FString Hlsl = CollapseWhitespace(StringField(Module, TEXT("hlsl")));
+			if (Hlsl.Len() > MaxInlineHlslLength)
+			{
+				Hlsl = Hlsl.Left(MaxInlineHlslLength) + TEXT("...");
+			}
+			Parts.Add(TEXT("hlsl: ") + Hlsl);
+		}
+		for (const TCHAR* Key : { TEXT("switches"), TEXT("inputs") })
+		{
+			for (const TSharedPtr<FJsonValue>& Value : ArrayField(Module, Key))
+			{
+				if (const FJsonObject* Input = AsObject(Value))
+				{
+					Parts.Add(NiagaraInputText(*Input));
+				}
+			}
+		}
+
+		const FJsonArray& Defaults = ArrayField(Module, TEXT("defaults"));
+		if (bModule && Defaults.Num() > 0)
+		{
+			TArray<FString> Names;
+			for (int32 Index = 0; Index < Defaults.Num() && Index < MaxInlineDefaults; ++Index)
+			{
+				Names.Add(Defaults[Index]->AsString());
+			}
+			FString DefaultsText = TEXT("default: ") + FString::Join(Names, TEXT(", "));
+			if (Defaults.Num() > MaxInlineDefaults)
+			{
+				DefaultsText += FString::Printf(TEXT(" +%d more"), Defaults.Num() - MaxInlineDefaults);
+			}
+			Parts.Add(TEXT("{") + DefaultsText + TEXT("}"));
+		}
+
+		FString Text = StringField(Module, TEXT("name"));
+		if (Kind == TEXT("scratchPad"))
+		{
+			Text += TEXT(" [scratch pad]");
+		}
+		if (Parts.Num() > 0)
+		{
+			Text += TEXT("(") + FString::Join(Parts, TEXT(", ")) + TEXT(")");
+		}
+		if (!BoolField(Module, TEXT("enabled"), true))
+		{
+			Text = TEXT("(off) ") + Text;
+		}
+		return Text;
+	}
+
+	FString NiagaraStackTitle(const FJsonObject& Stack)
+	{
+		const FString Usage = StringField(Stack, TEXT("usage"));
+		const FString Name = StringField(Stack, TEXT("name"));
+		FString Title;
+		if (Usage == TEXT("Event"))
+		{
+			Title = TEXT("event ") + Name;
+			const FString Source = StringField(Stack, TEXT("sourceEmitter"));
+			if (!Source.IsEmpty())
+			{
+				Title += TEXT(" from ") + Source;
+			}
+		}
+		else if (Usage == TEXT("SimulationStage"))
+		{
+			Title = TEXT("stage ") + Name;
+			TArray<FString> Details;
+			const FString Source = StringField(Stack, TEXT("iterationSource"));
+			if (!Source.IsEmpty())
+			{
+				const FString DataInterface = StringField(Stack, TEXT("dataInterface"));
+				Details.Add(DataInterface.IsEmpty() ? Source : Source + TEXT(" ") + DataInterface);
+			}
+			const FString Iterations = StringField(Stack, TEXT("iterations"));
+			if (!Iterations.IsEmpty() && Iterations != TEXT("1"))
+			{
+				Details.Add(TEXT("iterations=") + Iterations);
+			}
+			if (Details.Num() > 0)
+			{
+				Title += TEXT(" [") + FString::Join(Details, TEXT(", ")) + TEXT("]");
+			}
+		}
+		else
+		{
+			// "ParticleUpdate" -> "particle update"
+			for (int32 Index = 0; Index < Usage.Len(); ++Index)
+			{
+				if (Index > 0 && FChar::IsUpper(Usage[Index]))
+				{
+					Title.AppendChar(TEXT(' '));
+				}
+				Title.AppendChar(FChar::ToLower(Usage[Index]));
+			}
+		}
+		if (!BoolField(Stack, TEXT("enabled"), true))
+		{
+			Title = TEXT("(off) ") + Title;
+		}
+		return Title;
+	}
+
+	/** Header line plus one line per module. Empty stacks are skipped unless bShowEmpty (simulation stages always show). */
+	void WriteNiagaraStack(const FJsonObject& Stack, const FString& Indent, bool bShowEmpty, TArray<FString>& Lines)
+	{
+		const FJsonArray& Modules = ArrayField(Stack, TEXT("modules"));
+		const FString Error = StringField(Stack, TEXT("error"));
+		if (Modules.Num() == 0 && Error.IsEmpty() && !bShowEmpty)
+		{
+			return;
+		}
+		FString Title = Indent + NiagaraStackTitle(Stack) + TEXT(":");
+		if (!Error.IsEmpty())
+		{
+			Title += TEXT(" (") + Error + TEXT(")");
+		}
+		else if (Modules.Num() == 0)
+		{
+			Title += TEXT(" (no modules)");
+		}
+		Lines.Add(Title);
+		for (const TSharedPtr<FJsonValue>& Value : Modules)
+		{
+			if (const FJsonObject* Module = AsObject(Value))
+			{
+				Lines.Add(Indent + TEXT("  ") + NiagaraModuleText(*Module, true));
+			}
+		}
+	}
+
+	void WriteNiagaraEmitter(const FJsonObject& Emitter, TArray<FString>& Lines)
+	{
+		FString Header = TEXT("emitter ") + StringField(Emitter, TEXT("name"));
+		for (const TCHAR* Key : { TEXT("mode"), TEXT("simTarget") })
+		{
+			const FString Value = StringField(Emitter, Key);
+			if (!Value.IsEmpty())
+			{
+				Header += TEXT("  ") + Value;
+			}
+		}
+		const FString Parent = StringField(Emitter, TEXT("parent"));
+		if (!Parent.IsEmpty())
+		{
+			Header += TEXT("  parent=") + ShortName(Parent);
+		}
+		if (!BoolField(Emitter, TEXT("enabled"), true))
+		{
+			Header += TEXT("  (off)");
+		}
+		const FString Error = StringField(Emitter, TEXT("error"));
+		if (!Error.IsEmpty())
+		{
+			Header += TEXT("  (") + Error + TEXT(")");
+		}
+		Lines.Add(Header);
+
+		if (const FJsonObject* Properties = ObjectField(Emitter, TEXT("properties")))
+		{
+			Lines.Add(TEXT("  properties: ") + ObjectSettings(*Properties));
+		}
+		const FString Settings = InlineSettings(Emitter, TEXT("settings"));
+		if (!Settings.IsEmpty())
+		{
+			Lines.Add(TEXT("  settings:") + Settings);
+		}
+		for (const TSharedPtr<FJsonValue>& Value : ArrayField(Emitter, TEXT("stacks")))
+		{
+			if (const FJsonObject* Stack = AsObject(Value))
+			{
+				WriteNiagaraStack(*Stack, TEXT("  "), StringField(*Stack, TEXT("usage")) == TEXT("SimulationStage"), Lines);
+			}
+		}
+		for (const TSharedPtr<FJsonValue>& Value : ArrayField(Emitter, TEXT("renderers")))
+		{
+			if (const FJsonObject* Renderer = AsObject(Value))
+			{
+				FString Line = TEXT("  renderer ") + NiagaraClassLabel(StringField(*Renderer, TEXT("$class")), TEXT("RendererProperties"));
+				if (!BoolField(*Renderer, TEXT("bIsEnabled"), true))
+				{
+					Line += TEXT(" (off)");
+				}
+				const FString RendererSettings = ObjectSettings(*Renderer, MaxRendererSettingsLength);
+				if (!RendererSettings.IsEmpty())
+				{
+					Line += TEXT(": ") + RendererSettings;
+				}
+				Lines.Add(Line);
+			}
+		}
+	}
 }
 
 FString AGE::Summary::StateTreeOverview(const FJsonObject& Export)
@@ -1032,6 +1351,85 @@ FString AGE::Summary::AnimBlueprintOverview(const FJsonObject& Export)
 	if (OtherGraphs.Num() > 0)
 	{
 		Lines.Add(TEXT("other graphs (not summarized): ") + FString::Join(OtherGraphs, TEXT(", ")));
+	}
+	return FString::Join(Lines, TEXT("\n"));
+}
+
+FString AGE::Summary::NiagaraOverview(const FJsonObject& Export)
+{
+	using namespace AGE::SummaryDetail;
+	const FJsonObject* Niagara = ObjectField(Export, TEXT("niagara"));
+	if (!Niagara)
+	{
+		return FString();
+	}
+
+	TArray<FString> Lines;
+	Lines.Add(TEXT("NiagaraSystem ") + AssetPath(Export));
+	const FString Settings = InlineSettings(Export, TEXT("properties"));
+	if (!Settings.IsEmpty())
+	{
+		Lines.Add(TEXT("settings:") + Settings);
+	}
+
+	TArray<FString> UserParameters;
+	for (const TSharedPtr<FJsonValue>& Value : ArrayField(*Niagara, TEXT("userParameters")))
+	{
+		if (const FJsonObject* Parameter = AsObject(Value))
+		{
+			FString Name = StringField(*Parameter, TEXT("name"));
+			Name.RemoveFromStart(TEXT("User."));
+			FString Text = Name + TEXT(":") + StringField(*Parameter, TEXT("type"));
+			FString ParameterValue;
+			if (Parameter->TryGetStringField(TEXT("displayName"), ParameterValue) || Parameter->TryGetStringField(TEXT("value"), ParameterValue))
+			{
+				Text += TEXT("=") + Literal(ParameterValue);
+			}
+			else if (Parameter->TryGetStringField(TEXT("object"), ParameterValue))
+			{
+				Text += TEXT("=") + ShortName(ParameterValue);
+			}
+			else if (const FJsonObject* DataInterface = ObjectField(*Parameter, TEXT("dataInterface")))
+			{
+				Text += ObjectSettings(*DataInterface);
+			}
+			UserParameters.Add(Text);
+		}
+	}
+	if (UserParameters.Num() > 0)
+	{
+		Lines.Add(TEXT("user: ") + FString::Join(UserParameters, TEXT(", ")));
+	}
+
+	if (const FJsonObject* SystemJson = ObjectField(*Niagara, TEXT("system")))
+	{
+		for (const TSharedPtr<FJsonValue>& Value : ArrayField(*SystemJson, TEXT("stacks")))
+		{
+			if (const FJsonObject* Stack = AsObject(Value))
+			{
+				WriteNiagaraStack(*Stack, FString(), false, Lines);
+			}
+		}
+	}
+	for (const TSharedPtr<FJsonValue>& Value : ArrayField(*Niagara, TEXT("emitters")))
+	{
+		if (const FJsonObject* Emitter = AsObject(Value))
+		{
+			WriteNiagaraEmitter(*Emitter, Lines);
+		}
+	}
+
+	TArray<FString> Graphs;
+	for (const TSharedPtr<FJsonValue>& Value : ArrayField(*Niagara, TEXT("graphs")))
+	{
+		if (const FJsonObject* Graph = AsObject(Value))
+		{
+			Graphs.Add(FString::Printf(TEXT("%s (%s, %d nodes)"), *StringField(*Graph, TEXT("name")), *StringField(*Graph, TEXT("kind")), ArrayField(*Graph, TEXT("nodes")).Num()));
+		}
+	}
+	if (Graphs.Num() > 0)
+	{
+		Lines.Add(TEXT("graphs (age_get_asset with select niagara.graphs[Name]): ") + FString::Join(Graphs, TEXT(", ")));
 	}
 	return FString::Join(Lines, TEXT("\n"));
 }

@@ -5,6 +5,7 @@
 #include "AGEAssetExporter.h"
 #include "AGEExportContext.h"
 #include "AGEJsonQuery.h"
+#include "AGEMcpActivity.h"
 #include "AGEMcpState.h"
 #include "AGESummary.h"
 #include "IModelContextProtocolTool.h"
@@ -52,8 +53,11 @@ namespace AGE::McpToolsDetail
 			AGE::Mcp::NoteActivity();
 			const double Start = FPlatformTime::Seconds();
 			const TSharedRef<FJsonObject> NoArguments = MakeShared<FJsonObject>();
-			FModelContextProtocolToolResult Result = Function(Params.IsValid() ? *Params : *NoArguments);
-			UE_LOG(LogAssetGraphExporterMcp, Display, TEXT("%s (%.0f ms)"), *Name, (FPlatformTime::Seconds() - Start) * 1000.0);
+			const FJsonObject& Arguments = Params.IsValid() ? *Params : *NoArguments;
+			FModelContextProtocolToolResult Result = Function(Arguments);
+			const double Milliseconds = (FPlatformTime::Seconds() - Start) * 1000.0;
+			UE_LOG(LogAssetGraphExporterMcp, Display, TEXT("%s (%.0f ms)"), *Name, Milliseconds);
+			AGE::Mcp::Activity::RecordToolCall(Name, Arguments, Result, Milliseconds);
 			return Result;
 		}
 
@@ -359,6 +363,14 @@ namespace AGE::McpToolsDetail
 		});
 	}
 
+	FModelContextProtocolToolResult NiagaraOverview(const FJsonObject& Arguments)
+	{
+		return SummaryResult(Arguments, TEXT("NiagaraSystem"), TEXT("a Niagara System"), [](const FJsonObject& Export)
+		{
+			return AGE::Summary::NiagaraOverview(Export);
+		});
+	}
+
 	FModelContextProtocolToolResult Status(const FJsonObject& Arguments)
 	{
 		TArray<FString> Lines;
@@ -390,7 +402,7 @@ namespace AGE::McpToolsDetail
 			return ErrorResult(TEXT("This server runs inside the editor; age_shutdown only stops the background server started with Scripts\\Serve.bat."));
 		}
 		AGE::Mcp::RequestShutdown();
-		return TextResult(TEXT("The background server stops in about a second. Start it again with Scripts\\Serve.bat (takes about 10 seconds)."));
+		return TextResult(TEXT("The background server stops in a few seconds. Start it again with Scripts\\Serve.bat (startup can take up to a minute, mostly on the first start after a reboot)."));
 	}
 }
 
@@ -406,16 +418,16 @@ TArray<TSharedRef<IModelContextProtocolTool>> AGE::Mcp::CreateTools()
 		FSchema()
 			.Add(TEXT("name"), TEXT("string"), TEXT("Part of the asset name, case-insensitive. Optional."))
 			.Add(TEXT("path"), TEXT("string"), TEXT("Folder searched recursively. Default /Game."))
-			.Add(TEXT("class"), TEXT("string"), TEXT("Comma-separated classes, e.g. Blueprint, AnimBlueprint, StateTree. A parent class such as GameplayAbility also finds Blueprints derived from it. Optional."))
+			.Add(TEXT("class"), TEXT("string"), TEXT("Comma-separated classes, e.g. Blueprint, AnimBlueprint, StateTree, NiagaraSystem. A parent class such as GameplayAbility also finds Blueprints derived from it. Optional."))
 			.Add(TEXT("limit"), TEXT("integer"), TEXT("Maximum lines, default 100, at most 1000."))
 			.Build(),
 		&FindAssets));
 
 	Tools.Add(MakeShared<FTool>(TEXT("age_get_asset"),
-		TEXT("Structure of one asset as compact JSON: properties, Blueprint variables/components/graphs (nodes, pins, links), AnimBP bindings, StateTree states and bindings. "
+		TEXT("Structure of one asset as compact JSON: properties, Blueprint variables/components/graphs (nodes, pins, links), AnimBP bindings, StateTree states and bindings, Niagara emitters and stacks. "
 			"By default only values that differ from defaults are written. Use 'select' for one part, e.g. 'stateTree.bindings', 'blueprint.graphs[EventGraph]' or 'blueprint.graphs[0].nodes[3]'. "
 			"When the result is longer than maxChars an outline (paths, item counts, sizes) is returned instead, so you can narrow 'select'. "
-			"For StateTrees and Animation Blueprints, start with age_statetree_overview / age_animbp_overview, which are much shorter."),
+			"For StateTrees, Animation Blueprints and Niagara Systems, start with age_statetree_overview / age_animbp_overview / age_niagara_overview, which are much shorter."),
 		FSchema()
 			.Add(TEXT("asset"), TEXT("string"), AssetText, true)
 			.Add(TEXT("select"), TEXT("string"), TEXT("Path inside the JSON: keys separated by '.', [n] for an array index, [Name] for the item whose name/path/title is Name. Optional."))
@@ -446,6 +458,16 @@ TArray<TSharedRef<IModelContextProtocolTool>> AGE::Mcp::CreateTools()
 			"'CombatMove -> TurnInPlace if (bIsCombatMove AND (Speed2D < 10))'. The EventGraph and functions are only listed; use age_get_asset with select for them."),
 		FSchema().Add(TEXT("asset"), TEXT("string"), AssetText, true).Build(),
 		&AnimBlueprintOverview));
+
+	Tools.Add(MakeShared<FTool>(TEXT("age_niagara_overview"),
+		TEXT("Niagara System summary: user parameters, system stacks, then each emitter (CPU/GPU, parent) with every stack in execution order, "
+			"including event handlers and simulation stages (iteration source, data interface, iterations), and renderers. "
+			"One line per module with the inputs that were set: constants, linked parameters (e.g. User.WorldSpaceSize), dynamic inputs as nested calls, "
+			"data interfaces with their changed settings, custom HLSL; enum values by their editor display names. "
+			"Inputs left at their default are named at the end of the line ({default: ...}); a set input hidden by the current static switches is marked inactive. "
+			"For one module's full data or the raw graphs, use age_get_asset with select, e.g. 'niagara.emitters[Name].stacks' or 'niagara.graphs[Name]'."),
+		FSchema().Add(TEXT("asset"), TEXT("string"), AssetText, true).Build(),
+		&NiagaraOverview));
 
 	Tools.Add(MakeShared<FTool>(TEXT("age_status"),
 		TEXT("Where the age_* answers come from (the running editor, including unsaved changes, or the background server reading saved files), plus project, engine and exporter versions."),

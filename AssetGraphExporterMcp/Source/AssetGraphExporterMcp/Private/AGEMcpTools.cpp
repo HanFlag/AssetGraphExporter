@@ -1102,7 +1102,7 @@ namespace AGE::McpToolsDetail
 TArray<TSharedRef<IModelContextProtocolTool>> AGE::Mcp::CreateTools()
 {
 	using namespace AGE::McpToolsDetail;
-	const TCHAR* AssetText = TEXT("Asset path, e.g. /Game/Folder/ST_Boss (the .ST_Boss suffix is optional).");
+	const TCHAR* AssetText = TEXT("Asset path, e.g. /Game/Folder/ST_Tree (the .ST_Tree suffix is optional).");
 
 	TArray<TSharedRef<IModelContextProtocolTool>> Tools;
 	Tools.Add(MakeShared<FTool>(TEXT("age_guide"),
@@ -1220,7 +1220,7 @@ TArray<TSharedRef<IModelContextProtocolTool>> AGE::Mcp::CreateTools()
 	Tools.Add(MakeShared<FTool>(TEXT("age_animbp_overview"),
 		TEXT("Animation Blueprint summary: variables with their default values, AnimGraph pose flow (with the values and property-access bindings feeding each node), "
 			"every state machine with each state's pose and each transition rule written as an expression, e.g. "
-			"'CombatMove -> TurnInPlace if (bIsCombatMove AND (Speed2D < 10))', "
+			"'Strafe -> TurnInPlace if (bIsStrafing AND (Speed2D < 10))', "
 			"then the execution flow of the EventGraph and functions in the same form as age_blueprint_overview."),
 		FSchema().Add(TEXT("asset"), TEXT("string"), AssetText, true).Build(),
 		&AnimBlueprintOverview));

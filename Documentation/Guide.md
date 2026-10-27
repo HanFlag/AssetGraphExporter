@@ -1,131 +1,133 @@
-# 사용 안내
+**English** | [한국어](Guide.ko.md)
 
-설치, 커맨드렛과 MCP 도구 사용법, 확장 방법, 알려진 한계입니다. 출력 형식은 [JSON 스키마](JsonSchema.md)를 보세요.
+# Guide
 
-## 폴더 구조
+Installation, how to use the commandlet and the MCP tools, how to extend the plugin, and known limitations. For the output format, see the [JSON schema](JsonSchema.md).
+
+## Folder layout
 
 ```
-AssetGraphExporter/            ← 저장소
-  AssetGraphExporter/          ← 플러그인 본체 (설치할 때 이 폴더를 복사)
+AssetGraphExporter/            ← repository
+  AssetGraphExporter/          ← the plugin itself (copy this folder to install)
     AssetGraphExporter.uplugin
-    Source/AssetGraphExporter/            범용 처리 + Blueprint/AnimBP + 커맨드렛 + 요약 (Editor 모듈)
-    Source/AssetGraphExporterStateTree/   StateTree 처리기 (Editor 모듈)
-    Source/AssetGraphExporterNiagara/     Niagara System 처리기 (Editor 모듈)
-  AssetGraphExporterMcp/       ← MCP 연결 플러그인 (선택 설치, Unreal MCP 엔진 플러그인 필요)
+    Source/AssetGraphExporter/            generic export + Blueprint/AnimBP + commandlet + summaries (Editor module)
+    Source/AssetGraphExporterStateTree/   StateTree handler (Editor module)
+    Source/AssetGraphExporterNiagara/     Niagara System handler (Editor module)
+  AssetGraphExporterMcp/       ← MCP plugin (optional, needs the Unreal MCP engine plugin)
     AssetGraphExporterMcp.uplugin
-    Source/AssetGraphExporterMcp/         age_* 도구 + 상주 커맨드렛 AssetGraphServe + 활동 창 (Editor 모듈)
-    Resources/Activity.html               활동 창 페이지
-  Scripts/                     빌드·실행용 배치 파일
-  Packaged/                    Build.bat 결과물 (git 무시)
-  Logs/                        빌드·실행 로그 (git 무시)
+    Source/AssetGraphExporterMcp/         age_* tools + background commandlet AssetGraphServe + activity page (Editor module)
+    Resources/Activity.html               activity page
+  Scripts/                     batch files for building and running
+  Packaged/                    Build.bat output (ignored by git)
+  Logs/                        build and run logs (ignored by git)
 ```
 
-## 설치
+## Installation
 
-### 방법 A: 프로젝트에 복사 (일반적인 설치)
+### Method A: copy into the project (the usual way)
 
-1. `AssetGraphExporter/` 폴더를 `<프로젝트>/Plugins/AssetGraphExporter/`로 복사합니다.
-2. 프로젝트를 빌드합니다. C++ 프로젝트라면 IDE에서 Editor 타깃을 빌드하면 됩니다.
+1. Copy the `AssetGraphExporter/` folder to `<Project>/Plugins/AssetGraphExporter/`.
+2. Build the project. For a C++ project, build the Editor target in your IDE.
 
-`.uproject`에 따로 등록하지 않아도 됩니다. 엔진은 프로젝트 `Plugins/` 폴더에 있는 플러그인을 `EnabledByDefault`가 지정되지 않은 한 자동으로 켭니다(`FPlugin::IsEnabledByDefault`).
+You don't need to add it to the `.uproject`. The engine enables plugins in the project's `Plugins/` folder automatically unless `EnabledByDefault` says otherwise (`FPlugin::IsEnabledByDefault`).
 
-### 방법 B: 프로젝트를 건드리지 않고 사용
+### Method B: use it without touching the project
 
-1. `Scripts\Build.bat`로 플러그인만 따로 빌드합니다. 엔진의 `BuildPlugin` 명령을 쓰며, 결과는 `Packaged\`에 생깁니다.
-2. 실행할 때 `-PLUGIN=<.uplugin 경로>` 옵션으로 불러옵니다. `Scripts\Export.bat`이 이 옵션을 자동으로 붙입니다.
+1. Build only the plugins with `Scripts\Build.bat`. It uses the engine's `BuildPlugin` command and puts the result in `Packaged\`.
+2. Load them at run time with the `-PLUGIN=<path to .uplugin>` option. `Scripts\Export.bat` adds this option for you.
 
-주의: 방법 B에서 StateTree 처리기가 로드되려면, 대상 프로젝트가 이미 StateTree 플러그인을 켜고 빌드되어 있어야 합니다. 그렇지 않은 프로젝트에서는 방법 A를 쓰세요.
+Note: with method B, the StateTree handler loads only if the target project already has the StateTree plugin enabled and built. For other projects, use method A.
 
-### StateTree 의존성
+### StateTree dependency
 
-StateTree 처리기 모듈은 `StateTree` 플러그인에 의존하며, 이 의존성은 `.uplugin`에 `"Optional": true`로 걸려 있습니다.
-엔진 소스(UBT `UEBuildTarget.cs`, `PluginManager.cpp`)로 확인한 동작은 다음과 같습니다.
+The StateTree handler module depends on the `StateTree` plugin, and that dependency is marked `"Optional": true` in the `.uplugin`.
+Behavior checked in the engine source (UBT `UEBuildTarget.cs`, `PluginManager.cpp`):
 
-- Optional은 "플러그인 파일이 없으면 무시"라는 뜻입니다.
-- StateTree는 엔진에 기본으로 들어 있습니다. 따라서 이 플러그인을 넣으면 StateTree를 안 쓰는 프로젝트에서도 에디터에서는 StateTree가 함께 켜집니다.
-- `TargetAllowList: Editor`를 걸어 두었기 때문에 게임 빌드에는 영향이 없습니다.
+- Optional means "ignore it if the plugin files are missing".
+- StateTree ships with the engine. So adding this plugin also enables StateTree in the editor, even in projects that don't use StateTree.
+- Because of `TargetAllowList: Editor`, game builds are not affected.
 
-나이아가라 처리기 모듈(`AssetGraphExporterNiagara`)도 같은 방식으로 `Niagara` 플러그인에 Optional로 의존합니다. 나이아가라는 엔진 기본으로 켜져 있는 플러그인(`EnabledByDefault: true`)이라, 이 의존성 때문에 새로 켜지는 것은 없습니다.
+The Niagara handler module (`AssetGraphExporterNiagara`) depends on the `Niagara` plugin in the same Optional way. Niagara is enabled by default in the engine (`EnabledByDefault: true`), so this dependency enables nothing new.
 
-## 사용법
+## Usage
 
 ```
-UnrealEditor-Cmd.exe <Project>.uproject -run=AssetGraphExport [옵션]
+UnrealEditor-Cmd.exe <Project>.uproject -run=AssetGraphExport [options]
 ```
 
-| 옵션 | 설명 |
+| Option | Description |
 |---|---|
-| `-Assets=<경로들>` | 쉼표로 구분한 패키지 경로입니다. `/Game/Folder/Asset`과 `/Game/Folder/Asset.Asset` 둘 다 받습니다. |
-| `-Path=<폴더들>` | 쉼표로 구분한 폴더입니다. 하위 폴더까지 모두 포함합니다. |
-| `-Class=<클래스들>` | 클래스 필터입니다(하위 클래스 포함). 네이티브 클래스는 짧은 이름(`Blueprint`, `StateTree`, `GameplayAbility`)으로, BP 클래스는 전체 경로(`/Game/BP_Base.BP_Base_C`)로 씁니다. Blueprint는 부모 클래스로도 맞춥니다. 예를 들어 `-Class=GameplayAbility`로 GA 블루프린트를 찾을 수 있습니다. |
-| `-Out=<폴더>` | 출력 폴더입니다. 기본값은 `<프로젝트>/Saved/AssetExport`이고, 상대 경로는 프로젝트 폴더를 기준으로 합니다. |
-| `-Full` | 기본값과 같은 값까지 전부 씁니다. 기본 동작은 기본값과 다른 값만 쓰는 것입니다(아래 참고). |
-| `-Incremental` | 같은 `-Out` 폴더에 지난번 내보낸 결과가 있으면, 바뀌지 않은 에셋은 로드하지 않고 그 파일을 그대로 둡니다. 지난번에는 있었는데 이번에는 없는 에셋의 파일은 지웁니다(지난 `index.json`에 적힌 파일만). 아래 [증분 내보내기](JsonSchema.md#증분-내보내기--incremental) 참고. |
+| `-Assets=<paths>` | Comma-separated package paths. Both `/Game/Folder/Asset` and `/Game/Folder/Asset.Asset` work. |
+| `-Path=<folders>` | Comma-separated folders, including all subfolders. |
+| `-Class=<classes>` | Class filter (subclasses included). Native classes by short name (`Blueprint`, `StateTree`, `GameplayAbility`), BP classes by full path (`/Game/BP_Base.BP_Base_C`). Blueprints also match by parent class, so `-Class=GameplayAbility` finds GA Blueprints. |
+| `-Out=<folder>` | Output folder. The default is `<Project>/Saved/AssetExport`; relative paths are relative to the project folder. |
+| `-Full` | Write every value, including ones equal to the default. By default only values that differ from the default are written (see below). |
+| `-Incremental` | If the same `-Out` folder has an earlier export, assets that haven't changed are not loaded and their files are left as they are. Files of assets that were in the last export but not in this one are deleted (only files listed in the last `index.json`). See [Incremental export](JsonSchema.md#incremental-export--incremental) below. |
 
-`-Assets`나 `-Path` 중 하나 이상은 반드시 지정해야 합니다.
-종료 코드는 모든 에셋이 성공하면 0, 아니면 1입니다.
-대상 프로젝트의 에디터를 켜 둔 채로 실행해도 됩니다(UE 5.8.4에서 확인).
-커맨드렛은 에디터와 별개의 프로세스이고, **디스크에 저장된 에셋**을 읽습니다.
-에디터에서 고치고 아직 저장하지 않은 변경은 나오지 않으므로, 최신 내용을 보려면 먼저 저장하세요.
-(에디터 메모리를 직접 읽는 unreal-mcp 같은 도구와 다른 점입니다.)
+At least one of `-Assets` or `-Path` is required.
+The exit code is 0 if every asset succeeded, otherwise 1.
+You can run it while the target project's editor is open (checked on UE 5.8.4).
+The commandlet is a separate process from the editor and reads **assets as saved on disk**.
+Changes made in the editor but not saved yet don't show up, so save first to see the latest content.
+(This is the difference from tools such as unreal-mcp that read the editor's memory directly.)
 
-노드 제목, 핀 표시 이름, StateTree 노드 설명은 내보낼 때의 언어로 만들어집니다.
-그래서 커맨드렛은 언어를 영어(`en`)로 고정해, 에디터 언어가 다른 PC에서 내보내도 결과가 같게 합니다.
-엔진 옵션 `-culture=ko`처럼 직접 지정하면 그 언어를 씁니다. 사용한 언어는 `index.json`의 `query.culture`에 남습니다.
+Node titles, pin display names and StateTree node descriptions are produced in the language active at export time.
+So the commandlet fixes the language to English (`en`), and exports are the same on PCs whose editor language differs.
+If you pass an engine option such as `-culture=ko`, that language is used. The language used is recorded in `query.culture` in `index.json`.
 
-### 배치 파일 (방법 B)
+### Batch files (method B)
 
 ```
-Scripts\Setup.bat         최초 1회: git init, Scripts\LocalConfig.bat 생성
-Scripts\Build.bat         두 플러그인 빌드 → Packaged\  (Build.bat core / Build.bat mcp 로 하나만)
+Scripts\Setup.bat         first time only: git init, creates Scripts\LocalConfig.bat
+Scripts\Build.bat         builds both plugins → Packaged\  (Build.bat core / Build.bat mcp for just one)
 Scripts\Export.bat -Assets=/Game/Folder/BP_Thing,/Game/Folder/ST_Tree
 Scripts\Export.bat -Path=/Game/Folder -Class=Blueprint -Out=C:\Temp\Export
-Scripts\Serve.bat         에디터 없이 MCP 서버 켜기 (아래 MCP 도구 참고)
-Scripts\Editor.bat        두 플러그인을 -PLUGIN=으로 불러온 채 에디터 열기 (프로젝트 수정 없음)
+Scripts\Serve.bat         starts the MCP server without the editor (see MCP tools below)
+Scripts\Editor.bat        opens the editor with both plugins loaded through -PLUGIN= (the project is not changed)
 ```
 
-`Scripts\LocalConfig.bat`(git 무시)에 엔진 경로 `UE_ROOT`와 대상 프로젝트 `AGE_PROJECT`를 지정합니다.
+Set the engine path `UE_ROOT` and the target project `AGE_PROJECT` in `Scripts\LocalConfig.bat` (ignored by git).
 
-## MCP 도구 (AssetGraphExporterMcp)
+## MCP tools (AssetGraphExporterMcp)
 
-엔진 내장 Unreal MCP 서버(`ModelContextProtocol` 플러그인, Experimental)에 `age_*` 도구를 추가하는 플러그인입니다.
-Claude Code는 서버 하나(기본 `http://127.0.0.1:8000/mcp`)에만 연결하면 되고, 상황에 따라 대답하는 쪽이 바뀝니다.
+This plugin adds `age_*` tools to the engine's built-in Unreal MCP server (the `ModelContextProtocol` plugin, Experimental).
+Claude Code connects to one server only (by default `http://127.0.0.1:8000/mcp`), and the side that answers changes with the situation.
 
 ```
 Claude Code ──→ 127.0.0.1:8000/mcp
-   ├ 에디터 켜짐: 에디터 안의 Unreal MCP 서버 + age_* 도구   (저장 안 한 변경까지 보임)
-   └ 에디터 꺼짐: Serve.bat → 상주 커맨드렛이 같은 서버를 띄움  (디스크에 저장된 파일 기준)
+   ├ editor open:   the Unreal MCP server inside the editor + age_* tools    (sees unsaved changes too)
+   └ editor closed: Serve.bat → a background commandlet runs the same server (files saved on disk)
 ```
 
-- 도구는 `IModelContextProtocolModule::AddTool`로 서버에 직접 등록합니다. 그래서 `tools/list`에 바로 나오고, 결과도 이스케이프 없는 텍스트로 돌려줍니다.
-  (ToolsetRegistry 툴셋은 `list_toolsets` → `describe_toolset` → `call_tool`을 거쳐야 하고, 문자열 결과가 한 번 더 감싸집니다.)
-- 별도 플러그인으로 둔 이유: Unreal MCP는 Experimental이라 엔진 버전마다 바뀔 수 있습니다. 또 기본 플러그인에 넣으면, 그것을 쓰는 모든 프로젝트에서 Unreal MCP가 강제로 켜집니다.
-- 각 대답의 첫 줄은 출처입니다. 예: `source: editor`, `source: editor (has unsaved changes)`, `source: saved file (2026-10-23 12:00:00 UTC)`.
+- The tools are registered with the server directly through `IModelContextProtocolModule::AddTool`. So they appear in `tools/list` right away, and their results are returned as unescaped text.
+  (ToolsetRegistry toolsets have to go through `list_toolsets` → `describe_toolset` → `call_tool`, and string results get wrapped once more.)
+- Why a separate plugin: Unreal MCP is Experimental and may change between engine versions. Also, putting it in the main plugin would force Unreal MCP on in every project that uses it.
+- The first line of every answer is its source, for example `source: editor`, `source: editor (has unsaved changes)`, `source: saved file (2026-10-23 12:00:00 UTC)`.
 
-### 도구
+### Tools
 
-| 도구 | 하는 일 |
+| Tool | What it does |
 |---|---|
-| `age_find_assets` | 이름(일부)·폴더·클래스로 에셋 찾기. 로드하지 않습니다. |
-| `age_references` | 참조 관계: 이 에셋이 쓰는 것(`uses`)과 이 에셋을 쓰는 것(`usedBy`). 한 줄에 경로, 클래스, `hard`(함께 로드)/`soft`(필요할 때 로드), 게임에 필요 없으면 `editor-only`. C++ 모듈(`/Script/...`)은 `native:` 한 줄로 모읍니다. `asset`에 `/Script/게임모듈`을 주면 그 모듈을 쓰는 에셋. `depth`(1~3)로 몇 단계까지 따라갈지. 에셋을 로드하지 않습니다(Asset Registry). |
-| `age_find_usages` | C++ 클래스·UFUNCTION·UPROPERTY의 사용처. 멤버는 그것을 부르는(읽는·쓰는·덮어쓰는·바인딩하는) 그래프 노드를 한 줄씩(그래프, 노드 종류, 제목), 클래스는 JSON에서 그 클래스 경로가 나오는 모든 곳(부모 클래스, 캐스트, 핀 타입, 클래스 기본값). `symbol` 예: `GameplayAbility::GetAvatarActorFromActorInfo`, `ACharacter.JumpMaxCount`, `UGameplayAbility`. `path` 아래 BP는 전부, 그 밖의 에셋은 그 C++ 모듈에 의존하는 것만 찾고, 맵과 월드 파티션 레벨의 액터 패키지는 건너뜁니다. 아래 [사용처 찾기 캐시](#사용처-찾기-캐시) 참고. |
-| `age_diff` | 버전 비교: git의 예전 버전(`from`, 기본 `HEAD`)과 지금(또는 다른 버전 `to`)의 차이. BP·AnimBP·StateTree·나이아가라는 요약 도구의 글을 줄 단위로 비교(`-` 예전, `+` 지금)하고, 모든 에셋은 내보낸 JSON을 비교해 바뀐 개수를 알려 줍니다(`detail=json`이면 경로별 목록, 그래프 노드는 GUID로 짝을 맞춤). 예전 파일은 git에서 꺼내 임시 패키지로 로드합니다(에디터의 Diff 기능과 같은 방식). |
-| `age_get_asset` | 위 JSON 스키마 그대로(공백 없는 JSON). `select`로 일부만 받습니다. 예: `stateTree.bindings`, `blueprint.graphs[EventGraph]`, `blueprint.graphs[0].nodes[3]`. 결과가 `maxChars`(기본 40000자)보다 길면 대신 목차(경로, 항목 수, 크기)를 돌려줍니다. |
-| `age_statetree_overview` | 상태 트리 요약: 상태 계층, 진입 조건, 태스크, 전환(대상, 트리거, 조건)을 한 줄씩 |
-| `age_statetree_bindings` | 바인딩을 `원본 -> 대상` 한 줄씩. `filter`로 거르기 |
-| `age_blueprint_overview` | BP 요약(Actor, GameplayAbility, Widget 등): 부모 클래스, 인터페이스, 변수와 기본값, 컴포넌트, 이 BP가 바꾼 클래스 기본값, EventGraph·함수·매크로·접힌 그래프의 **실행 흐름** |
-| `age_animbp_overview` | AnimBP 요약: 변수와 기본값, AnimGraph 포즈 흐름, 스테이트 머신의 상태별 포즈와 전환 규칙(식으로), EventGraph·함수의 실행 흐름 |
-| `age_niagara_overview` | 나이아가라 요약: 사용자 파라미터, 시스템 스택, 이미터마다 실행 순서대로 모든 스택(이벤트 핸들러, **Simulation Stage** 포함)의 모듈과 설정한 입력값, 렌더러 |
-| `age_status` | 지금 대답하는 쪽(에디터 / 상주 서버), 프로젝트, 엔진·플러그인 버전 |
-| `age_shutdown` | 상주 서버 끄기 (에디터 안에서는 아무것도 하지 않음) |
+| `age_find_assets` | Find assets by (part of a) name, folder and class. Doesn't load them. |
+| `age_references` | References: what this asset uses (`uses`) and what uses this asset (`usedBy`). One line each: path, class, `hard` (loaded together) / `soft` (loaded when needed), and `editor-only` if the game doesn't need it. C++ modules (`/Script/...`) are gathered on one `native:` line. Give `/Script/GameModule` as `asset` to get the assets that use that module. `depth` (1–3) sets how many steps to follow. Doesn't load assets (Asset Registry). |
+| `age_find_usages` | Where a C++ class, UFUNCTION or UPROPERTY is used. For a member, one line per graph node that calls, reads, writes, overrides or binds it (graph, node kind, title); for a class, every place its class path appears in the JSON (parent class, casts, pin types, class defaults). `symbol` examples: `GameplayAbility::GetAvatarActorFromActorInfo`, `ACharacter.JumpMaxCount`, `UGameplayAbility`. Searches every BP under `path`, and other assets only if they depend on that C++ module; skips maps and World Partition actor packages. See [Usage search cache](#usage-search-cache) below. |
+| `age_diff` | Revision diff: the difference between an older git revision (`from`, default `HEAD`) and now (or another revision `to`). For BP, AnimBP, StateTree and Niagara it compares the summary tools' text line by line (`-` old, `+` now); for every asset it compares the exported JSON and reports how many values changed (`detail=json` lists them by path; graph nodes are matched by GUID). The old file is taken from git and loaded as a temporary package (the same way as the editor's Diff feature). |
+| `age_get_asset` | The JSON schema above as is (compact JSON). Use `select` to get just a part, for example `stateTree.bindings`, `blueprint.graphs[EventGraph]`, `blueprint.graphs[0].nodes[3]`. If the result is longer than `maxChars` (default 40000 characters), a table of contents (paths, item counts, sizes) is returned instead. |
+| `age_statetree_overview` | StateTree summary: state hierarchy, enter conditions, tasks, transitions (target, trigger, conditions), one line each |
+| `age_statetree_bindings` | Bindings as `source -> target`, one per line. Filter with `filter` |
+| `age_blueprint_overview` | BP summary (Actor, GameplayAbility, Widget and so on): parent class, interfaces, variables and defaults, components, class defaults this BP changed, and the **execution flow** of the EventGraph, functions, macros and collapsed graphs |
+| `age_animbp_overview` | AnimBP summary: variables and defaults, AnimGraph pose flow, each state machine's per-state pose and transition rules (as expressions), execution flow of the EventGraph and functions |
+| `age_niagara_overview` | Niagara summary: user parameters, system stacks, and for each emitter every stack in execution order (event handlers and **Simulation Stages** included) with its modules and set input values, plus renderers |
+| `age_status` | Which side is answering (editor / background server), the project, engine and plugin versions |
+| `age_shutdown` | Stops the background server (does nothing inside the editor) |
 
-요약 도구의 출력 예 (`age_animbp_overview` 일부):
+Example output of a summary tool (part of `age_animbp_overview`):
 
 ```
 StateMachine Main
   entry -> Locomotion
-  state Locomotion: BS2D_BossMoveLocomotion Blendspace Player(X=Direction, Y=Speed2D)
-  CombatMove -> TurnInPlace if (bIsCombatMove AND (Speed2D < 10) AND (Abs(AimTurnRate) > 20))
+  state Locomotion: BS_Locomotion Blendspace Player(X=Direction, Y=Speed2D)
+  Strafe -> TurnInPlace if (bIsStrafing AND (Speed2D < 10) AND (Abs(AimTurnRate) > 20))
 EventGraph (Ubergraph):
   Event BlueprintUpdateAnimation(DeltaTimeX):
     Is Valid(TryGetPawnOwner())
@@ -134,107 +136,107 @@ EventGraph (Ubergraph):
         LastYaw = TryGetPawnOwner().K2_GetActorRotation().Yaw
 ```
 
-실행 흐름 읽는 법 (`age_blueprint_overview`, `age_animbp_overview` 공통):
-- 이벤트·함수 시작 노드마다 한 덩어리. 실행 핀을 따라 노드 하나에 한 줄입니다.
-- Set 노드는 `변수 = 식`, Branch는 `if 조건`, 함수 반환은 `return 이름=식`. 식은 연결된 순수 노드를 펼쳐 쓴 것입니다.
-- 실행 출력이 여러 개인 노드(Branch, Sequence, Is Valid, 반복문, Switch)는 연결된 출력마다 `[출력 이름]` 아래로 들여 씁니다.
-- 이미 쓴 노드로 다시 합쳐지면 `-> continues at "..." above`로 가리키기만 합니다(실행 루프도 여기서 끝남).
-- 실행 노드의 결과 값은 `함수이름.핀이름`으로 가리킵니다(호출은 그 노드의 줄에 있음). 나뉜 구조체 핀은 `.Yaw`, `(X=..., Y=..., Z=...)`처럼 씁니다.
-- 어떤 시작 노드에서도 닿지 않는 실행 노드는 그래프 끝에 `not reached from an entry`로 셉니다.
+How to read the execution flow (same for `age_blueprint_overview` and `age_animbp_overview`):
+- One block per event or function entry node. Following the exec pins, one line per node.
+- A Set node is `variable = expression`, a Branch is `if condition`, a function return is `return name=expression`. Expressions are the connected pure nodes written out.
+- Nodes with several exec outputs (Branch, Sequence, Is Valid, loops, Switch) indent each connected output under `[output name]`.
+- When the flow joins a node already written, it only points to it with `-> continues at "..." above` (exec loops also end here).
+- The result of an exec node is referred to as `FunctionName.PinName` (the call is on that node's line). Split struct pins are written like `.Yaw` or `(X=..., Y=..., Z=...)`.
+- Exec nodes that no entry node reaches are counted at the end of the graph as `not reached from an entry`.
 
-`age_references` 출력 예 (`BP_GA_EnemyDodge`):
+Example output of `age_references` (`BP_GA_Dodge`):
 
 ```
 source: asset registry (saved files; unsaved editor changes are not included)
-/Game/MyStuff/Ability/BP_GA_EnemyDodge  [Blueprint]
+/Game/Abilities/BP_GA_Dodge  [Blueprint]
 uses (4 + 3 native modules):
-  /Game/MyStuff/Ability/BP_GE_Cooldown  [Blueprint]  hard
-  /Game/MyStuff/SteampunkCat_Animation/MT_EnemySPCat_Dodge_Back  [AnimMontage]  hard
-  /Game/MyStuff/SteampunkCat_Animation/MT_EnemySPCat_Dodge_L  [AnimMontage]  hard
-  /Game/MyStuff/SteampunkCat_Animation/MT_EnemySPCat_Dodge_R  [AnimMontage]  hard
-  native: /Script/GameplayAbilities, /Script/GameplayTags, /Script/MomentTrigger
+  /Game/Abilities/BP_GE_Cooldown  [Blueprint]  hard
+  /Game/Animations/MT_Dodge_Back  [AnimMontage]  hard
+  /Game/Animations/MT_Dodge_L  [AnimMontage]  hard
+  /Game/Animations/MT_Dodge_R  [AnimMontage]  hard
+  native: /Script/GameplayAbilities, /Script/GameplayTags, /Script/MyGame
 used by (2):
-  /Game/MyStuff/EnemyAI/ST_Boss  [StateTree]  hard
-  /Game/MyStuff/EnemyCharacter/BP_SteampunkCat1  [Blueprint]  hard
+  /Game/AI/ST_Enemy  [StateTree]  hard
+  /Game/Characters/BP_Enemy  [Blueprint]  hard
 ```
 
-### 사용처 찾기 캐시
+### Usage search cache
 
-`age_find_usages`는 후보 에셋을 한 번 내보내 캐시 폴더에 두고, 다음부터는 바뀐 에셋만 다시 내보냅니다(커맨드렛 `-Incremental`과 같은 키, 같은 폴더 형식).
+`age_find_usages` exports the candidate assets once into a cache folder, and after that re-exports only assets that changed (the same keys and folder format as the commandlet's `-Incremental`).
 
-- 위치: `<프로젝트>/Saved/AssetGraphExporter/Cache`. 실행 인자 `-AGECacheDir=<폴더>`로 바꿉니다(예: `Serve.bat -AGECacheDir=D:\AgeCache`).
-- 처음 검색은 후보를 모두 로드하므로 오래 걸릴 수 있고, 그동안 서버(에디터 모드에서는 에디터)가 멈춥니다. 커맨드렛으로 미리 채울 수 있습니다: `Export.bat -Path=/Game -Class=Blueprint -Out=<캐시 폴더> -Incremental`. 단, 커맨드렛 `-Incremental`은 그 질의에 없는 에셋의 파일을 지우므로 캐시에는 넓은 질의로만 쓰세요. 언어가 다르면(커맨드렛은 `en`) 키가 달라 다시 내보냅니다.
-- 에디터 모드에서 저장하지 않은 변경이 있는 에셋은 캐시를 쓰지 않고 메모리에서 바로 읽습니다(캐시에 쓰지 않음).
+- Location: `<Project>/Saved/AssetGraphExporter/Cache`. Change it with the `-AGECacheDir=<folder>` argument (for example `Serve.bat -AGECacheDir=D:\AgeCache`).
+- The first search loads every candidate, so it can take a while, and the server (the editor, in editor mode) is blocked meanwhile. You can fill the cache in advance with the commandlet: `Export.bat -Path=/Game -Class=Blueprint -Out=<cache folder> -Incremental`. But the commandlet's `-Incremental` deletes files of assets not in that query, so use only a broad query for the cache. If the language differs (the commandlet uses `en`), the keys differ and assets are exported again.
+- In editor mode, assets with unsaved changes skip the cache and are read from memory directly (and not written to the cache).
 
-### 버전 비교 (`age_diff`)
+### Revision diff (`age_diff`)
 
-- 예전 파일은 `git cat-file`로 꺼냅니다. Git LFS 파일은 이 PC의 LFS 저장소(`.git/lfs/objects`)에 있을 때만 읽고, 내려받지 않습니다. 없으면 `git lfs fetch`로 받은 뒤 다시 하라고 알려 줍니다.
-- 꺼낸 파일은 `<프로젝트>/Saved/AssetGraphExporter/Diff`(실행 인자 `-AGEDiffDir=<폴더>`로 변경)에 두고 `/AGEDiff/<커밋>/...` 패키지로 로드합니다. 에셋 안에서 원래 패키지를 가리키는 참조는 그 임시 패키지로 이어지고, BP는 컴파일하지 않습니다. 비교 전에 임시 패키지 이름은 원래 이름으로 되돌립니다.
-- `/AGEDiff/`는 서버(또는 에디터)가 끝날 때까지 연결된 채로 둡니다. 로드한 예전 버전이 다음 정리 때까지 메모리에 남기 때문입니다.
+- The old file is taken out with `git cat-file`. Git LFS files are read only if they are in this PC's LFS store (`.git/lfs/objects`); nothing is downloaded. If a file is missing, it tells you to fetch it with `git lfs fetch` and try again.
+- Extracted files go to `<Project>/Saved/AssetGraphExporter/Diff` (change with the `-AGEDiffDir=<folder>` argument) and are loaded as `/AGEDiff/<commit>/...` packages. References inside the asset that point to its original packages lead to those temporary packages, and BPs are not compiled. Before comparing, temporary package names are turned back into the original names.
+- `/AGEDiff/` stays mounted until the server (or editor) exits, because loaded old versions stay in memory until the next cleanup.
 
-### 활동 창 (Claude가 MCP로 한 일 보기)
+### Activity page (see what Claude did through MCP)
 
-MCP 서버와 같은 주소에 작은 페이지가 붙습니다: `http://127.0.0.1:8000/age/activity` (포트는 MCP 설정을 따름).
-에디터 모드와 상주 서버 모드 모두 같은 페이지입니다. 1초마다 새 항목이 위에 추가됩니다.
+A small page is served at the same address as the MCP server: `http://127.0.0.1:8000/age/activity` (the port follows the MCP settings).
+It is the same page in editor mode and background-server mode. New entries are added at the top every second.
 
-- `age_*` 호출: 무엇을 했는지(예: "StateTree 요약 ST_Boss"), 저장된 파일·에디터 중 어디서 읽었는지, 결과 길이, 걸린 시간, 오류.
-- 엔진 내장 도구: 이름과 시각만. Unreal MCP 서버가 호출마다 남기는 로그 한 줄(`Running tool: '...'`, `ModelContextProtocolServer.cpp`)을 받아 씁니다. `call_tool` 안에서 실제로 부른 도구 이름은 이 로그에 없어서 보이지 않습니다.
-- AI 클라이언트가 새로 연결하면(`Session initialized`) 한 줄 남깁니다.
-- 처음 연결되거나 도구를 처음 부를 때 기본 브라우저로 한 번 열립니다. 끄려면 콘솔 변수 `AGE.ActivityWindow 0` 또는 실행 인자 `-AGENoActivityWindow`. 직접 열기: 콘솔 명령 `AGE.OpenActivity`.
-- 기록은 메모리에만 있습니다(최근 200개). 파일을 쓰지 않고, 서버가 꺼지면 사라집니다.
-- 페이지는 MCP 서버와 같은 HTTP 서버(같은 포트)에서 나가므로, 접근 범위도 MCP 서버와 같습니다.
+- `age_*` calls: what was done (for example "StateTree summary ST_Enemy"), whether it was read from saved files or the editor, result length, time taken, errors.
+- Built-in engine tools: only the name and time. It uses the log line the Unreal MCP server writes for each call (`Running tool: '...'`, `ModelContextProtocolServer.cpp`). The tool actually called inside `call_tool` is not in that log, so it isn't shown.
+- When an AI client connects (`Session initialized`), one line is added.
+- It opens once in the default browser on the first connection or the first tool call. To turn that off, use the console variable `AGE.ActivityWindow 0` or the argument `-AGENoActivityWindow`. To open it yourself: the console command `AGE.OpenActivity`.
+- Entries live only in memory (the latest 200). Nothing is written to files, and they are gone when the server stops.
+- The page is served by the same HTTP server (same port) as the MCP server, so its access scope is the same as the MCP server's.
 
-### 상주 서버 (`Serve.bat`, 커맨드렛 `AssetGraphServe`)
+### Background server (`Serve.bat`, commandlet `AssetGraphServe`)
 
 ```
 UnrealEditor-Cmd.exe <Project>.uproject -run=AssetGraphServe [-IdleMinutes=30] [-IgnoreEditor]
 ```
 
-- 엔진 시작은 켤 때 한 번입니다. 그 뒤 질문은 엔진을 다시 띄우지 않습니다.
-- 측정(MomentTrigger, 2026-10-24):
-  - 재부팅 뒤 첫 실행은 준비까지 62초였습니다. 이 중 Zen 저장소 서버 시작이 8.8초, 셰이더 타입 준비가 17초입니다. 바로 다음 실행(에디터 거절 시험)에서는 둘 다 1초 안팎이었습니다.
-  - 켜진 뒤 도구 호출은 4–460 ms입니다. 첫 `age_find_assets`만 2.7초 걸렸습니다(에셋 목록 캐시 126 MB를 디스크에 쓰는 시간).
-  - `age_shutdown` 후 프로세스가 끝나기까지 3.4초(응답을 보내려고 기다리는 1초 + 엔진 종료 2.4초).
-- 엔진이 허용하는 방식입니다. Unreal MCP 설정 코드(`ModelContextProtocolSettings.cpp`)에 커맨드렛은 서버를 직접 켜라는 주석이 있고, 에디터 커맨드렛도 `UEditorEngine`을 만들고 PostEngineInit까지 거칩니다(`LaunchEngineLoop.cpp`). 커맨드렛 루프에서 `FTSTicker`를 돌려 HTTP·MCP 서버를 움직입니다.
-- 다음 경우에 스스로 꺼집니다: `age_shutdown`, Ctrl+C, `age_*` 요청 없이 `-IdleMinutes`분(기본 30, 0이면 끄지 않음), Unreal Editor가 켜졌을 때(같은 포트를 에디터에 넘김). 에디터가 켜져 있으면 시작하지 않습니다. `Serve.bat`이 엔진을 띄우기 전에 먼저 확인하므로 바로 거절됩니다(`-IgnoreEditor`로 무시).
-- **C++ 빌드 전에는 꺼야 합니다.** 켜져 있는 동안 프로젝트와 플러그인 DLL이 로드되어 있어 빌드가 덮어쓰지 못합니다.
-- 디스크 기준입니다. 서버가 켜진 뒤 다시 저장된 에셋은 다음 요청 때 다시 읽습니다(`UPackageTools::ReloadPackages`).
-- 내장 Unreal MCP 도구(`call_tool`)도 같이 열립니다. 다만 에디터 창이나 뷰포트가 필요한 도구는 이 모드에서 실패할 수 있습니다.
-- 텍스트 언어는 Export 커맨드렛과 같이 영어로 고정합니다. 에디터 모드는 에디터 언어를 그대로 씁니다(사용자 화면을 바꾸지 않기 위해).
-- 포트와 URL은 Unreal MCP 설정을 따릅니다. `-ModelContextProtocolPort=N`으로 포트를 바꿀 수 있습니다.
+- The engine starts once, when the server starts. Later questions don't start the engine again.
+- Measurements (test project, 2026-10-24):
+  - The first run after a reboot took 62 seconds to get ready. Of that, starting the Zen storage server took 8.8 seconds and preparing shader types took 17 seconds. On the very next run (the editor-refusal test), both took about 1 second.
+  - Once up, tool calls take 4–460 ms. Only the first `age_find_assets` took 2.7 seconds (writing the 126 MB asset list cache to disk).
+  - 3.4 seconds from `age_shutdown` to process exit (1 second waiting to send the reply + 2.4 seconds of engine shutdown).
+- The engine allows this. The Unreal MCP settings code (`ModelContextProtocolSettings.cpp`) has a comment saying commandlets should start the server themselves, and editor commandlets also create `UEditorEngine` and go through PostEngineInit (`LaunchEngineLoop.cpp`). The commandlet loop runs `FTSTicker` to drive the HTTP and MCP servers.
+- It stops by itself on: `age_shutdown`, Ctrl+C, `-IdleMinutes` minutes without an `age_*` request (default 30, 0 means never), or when Unreal Editor starts (it hands the port to the editor). It doesn't start if the editor is running; `Serve.bat` checks this before starting the engine, so it refuses right away (ignore with `-IgnoreEditor`).
+- **Stop it before building C++.** While it runs, the project and plugin DLLs are loaded and the build can't overwrite them.
+- It works from disk. Assets saved again after the server started are read again on the next request (`UPackageTools::ReloadPackages`).
+- The built-in Unreal MCP tools (`call_tool`) are available too. But tools that need an editor window or viewport may fail in this mode.
+- The text language is fixed to English, as in the Export commandlet. Editor mode uses the editor's language as is (so the user's UI isn't changed).
+- The port and URL follow the Unreal MCP settings. Change the port with `-ModelContextProtocolPort=N`.
 
-### 설치와 연결
+### Install and connect
 
-1. 두 플러그인을 설치합니다. 방법 A는 `AssetGraphExporter/`와 `AssetGraphExporterMcp/`를 함께 `<프로젝트>/Plugins/`에 복사, 방법 B는 `Scripts\Build.bat` 후 `Serve.bat` / `Editor.bat`(둘 다 `-PLUGIN=`으로 불러옴).
-2. 에디터 모드: 플러그인이 에디터가 열릴 때 Unreal MCP 서버를 스스로 켭니다(엔진의 사용자별 설정 "Auto Start Server"를 켤 필요 없음). 끄려면 에디터를 `-AGENoServerAutoStart`로 엽니다. 상주 서버가 막 꺼지는 중이라 포트가 잠깐 잡혀 있으면 2초 간격으로 다시 시도합니다(최대 15번). 에디터 모드에서는 호출마다 약 0.33초가 걸렸습니다. `tools/list`도 같은 시간이 걸리므로, 도구 처리 시간이 아니라 에디터가 요청을 처리하는 프레임 간격으로 보입니다(에디터 창이 뒤에 있으면 프레임을 줄입니다). 자동 켜기를 끈 경우에는 Project Settings > Plugins > Model Context Protocol의 Auto Start Server를 켜거나, 콘솔 명령 `ModelContextProtocol.StartServer`를 씁니다.
-3. Claude Code에 서버를 등록합니다: `claude mcp add --transport http unreal http://127.0.0.1:8000/mcp`
-   (엔진 콘솔 명령 `ModelContextProtocol.GenerateClientConfig ClaudeCode`로 설정 파일을 만들 수도 있습니다.)
+1. Install both plugins. Method A: copy `AssetGraphExporter/` and `AssetGraphExporterMcp/` together into `<Project>/Plugins/`. Method B: `Scripts\Build.bat`, then `Serve.bat` / `Editor.bat` (both load the plugins through `-PLUGIN=`).
+2. Editor mode: the plugin starts the Unreal MCP server by itself when the editor opens (no need to turn on the engine's per-user setting "Auto Start Server"). To prevent this, open the editor with `-AGENoServerAutoStart`. If the port is still held briefly because the background server is shutting down, it retries every 2 seconds (up to 15 times). In editor mode each call took about 0.33 seconds. `tools/list` takes the same time, so this looks like the frame interval at which the editor handles requests, not the tools' processing time (the editor lowers its frame rate when its window is in the background). If you turned auto start off, enable Auto Start Server in Project Settings > Plugins > Model Context Protocol, or use the console command `ModelContextProtocol.StartServer`.
+3. Register the server in Claude Code: `claude mcp add --transport http unreal http://127.0.0.1:8000/mcp`
+   (You can also create a config file with the engine console command `ModelContextProtocol.GenerateClientConfig ClaudeCode`.)
 
-## 확장: 새 에셋 타입 처리기
+## Extending: a handler for a new asset type
 
-1. `IAGEAssetHandler`를 구현합니다.
-2. 모듈의 `StartupModule`에서 `FAGEHandlerRegistry::Get().Register(...)`로 등록합니다.
+1. Implement `IAGEAssetHandler`.
+2. Register it in the module's `StartupModule` with `FAGEHandlerRegistry::Get().Register(...)`.
 
-규칙:
-- 범용 `properties`는 항상 먼저 써집니다. 처리기는 리플렉션만으로 읽기 어려운 부분만 추가하면 됩니다.
-- 여러 처리기가 같은 에셋을 맡겠다고 하면 우선순위가 높은 쪽이 이깁니다(AnimBlueprint 20 > Blueprint 10).
-- 값을 쓸 때는 `FAGEPropertyWriter`, 그래프를 쓸 때는 `FAGEGraphWriter`를 재사용할 수 있습니다.
-- 다른 프런트엔드(예: MCP 서버)에서는 `FAGEAssetExporter::ExportAsset`을 그대로 호출하면 됩니다.
-- 내보낸 JSON을 짧은 텍스트로 바꾸는 함수는 `AGE::Summary`(`AGESummary.h`), JSON 일부 선택·목차는 `AGE::JsonQuery`(`AGEJsonQuery.h`)에 있습니다. 둘 다 내보낸 JSON만 읽으므로 MCP 없이도 쓸 수 있습니다.
+Rules:
+- The generic `properties` are always written first. A handler only needs to add what reflection alone can't read well.
+- If several handlers claim the same asset, the one with the higher priority wins (AnimBlueprint 20 > Blueprint 10).
+- You can reuse `FAGEPropertyWriter` for values and `FAGEGraphWriter` for graphs.
+- Other front ends (such as the MCP server) can call `FAGEAssetExporter::ExportAsset` as is.
+- Functions that turn exported JSON into short text are in `AGE::Summary` (`AGESummary.h`); selecting part of the JSON and building a table of contents are in `AGE::JsonQuery` (`AGEJsonQuery.h`). Both read only the exported JSON, so they work without MCP.
 
-## 알려진 한계
+## Known limitations
 
-- Blueprint의 상속 컴포넌트 오버라이드(`InheritableComponentHandler`)는 범용 `properties`에만 나옵니다.
-- Actor BP의 `components[].properties`는 컴포넌트 클래스 기본값과 비교한 차이입니다.
-- `-Class` 필터로 BP를 부모 클래스 기준으로 찾을 때, 부모가 BP이면 그 부모 BP를 로드합니다.
-- 레벨(맵) 에셋은 범용 `properties`만 나옵니다.
-- 상주 서버의 "다시 저장된 에셋 다시 읽기"는 아직 실제로 시험하지 않았습니다(시험하려면 `Content/` 파일을 바꿔야 해서).
-- 상주 서버는 요청받은 에셋의 패키지만 다시 읽습니다. 그 에셋이 참조하는 다른 에셋(예: 부모 BP)이 바뀐 경우, 그것이 메모리에서 정리(2분마다)되거나 직접 요청될 때까지 예전 값이 섞일 수 있습니다.
-- `age_references`는 디스크에 저장된 내용 기준입니다(Asset Registry). 에디터에서 저장하지 않은 변경은 반영되지 않습니다.
-- `age_find_usages`가 찾지 않는 곳: 구조체 Break/Make 노드의 멤버, AnimBP 프로퍼티 액세스 바인딩 문자열 안의 멤버 경로, 맵(레벨 블루프린트). `MemberParent`가 로드되지 않은 BP 클래스인 노드는 판정하지 못해 빠집니다.
-- Asset Registry의 C++ 모듈 의존은 빠진 것이 있습니다(5.8로 저장한 시험 에셋에서 `/Script/Engine`, `/Script/CoreUObject` 의존이 기록되지 않음). 그래서 `age_references`의 `native:` 줄과 `/Script/...` 사용처는 전부가 아닐 수 있고, `age_find_usages`는 BP를 모듈 의존과 상관없이 모두 찾습니다.
-- `age_diff`: 예전 버전도 지금의 C++ 클래스로 읽으므로, 그 사이 없어진 C++ 멤버는 빠진 값이나 끊긴 핀처럼 보일 수 있습니다(에디터의 Diff 기능도 같음). 맵은 지원하지 않습니다. git이 PATH에 있어야 합니다.
-- 실행 흐름 요약에서 순수 노드는 쓰일 때마다 식으로 다시 펼쳐집니다(같은 `TryGetPawnOwner()`가 여러 줄에 나올 수 있음).
-- `variables[].default`는 CDO 값입니다. CDO에 그 변수가 없으면(예: 변수를 추가한 뒤 컴파일하지 않음) `FBPVariableDescription::DefaultValue` 문자열을 대신 씁니다. 시험한 에셋에서는 이 문자열이 모두 비어 있었습니다.
-- 나이아가라: 경량(Stateless) 이미터는 범용 리플렉션으로만 씁니다. 스크래치 패드 모듈은 이름만 스택에 나오고, 내용은 `graphs`에 있습니다. `defaults`는 이름만 있고 값은 없습니다(모듈 에셋 쪽 기본값).
-- 나이아가라 그래프는 큽니다(유체 시스템 `NS_HeatLaser_Fluid`의 JSON이 116만 자이고, 대부분이 노드 604개짜리 이미터 그래프입니다). `age_niagara_overview`부터 보고, 필요한 부분만 `select`로 꺼내세요.
+- Inherited component overrides of a Blueprint (`InheritableComponentHandler`) appear only in the generic `properties`.
+- An Actor BP's `components[].properties` are differences from the component class defaults.
+- When the `-Class` filter finds BPs by parent class and the parent is a BP, that parent BP is loaded.
+- Level (map) assets get only the generic `properties`.
+- The background server's "read assets saved again" has not been tested for real yet (testing it would mean changing files in `Content/`).
+- The background server reloads only the packages of the requested assets. If another asset it references (for example a parent BP) changed, old values may be mixed in until that asset is cleaned out of memory (every 2 minutes) or requested directly.
+- `age_references` is based on what is saved on disk (Asset Registry). Unsaved editor changes are not reflected.
+- What `age_find_usages` doesn't search: members in struct Break/Make nodes, member paths inside AnimBP property access binding strings, maps (level Blueprints). Nodes whose `MemberParent` is a BP class that isn't loaded can't be judged and are left out.
+- Some C++ module dependencies are missing from the Asset Registry (in test assets saved with 5.8, dependencies on `/Script/Engine` and `/Script/CoreUObject` were not recorded). So the `native:` line of `age_references` and usages of `/Script/...` may be incomplete, and `age_find_usages` searches every BP regardless of module dependencies.
+- `age_diff`: old revisions are also read with the current C++ classes, so C++ members removed in between may look like missing values or broken pins (the editor's Diff feature does the same). Maps are not supported. git must be on the PATH.
+- In the execution-flow summary, pure nodes are written out again as expressions each time they are used (the same `TryGetPawnOwner()` can appear on several lines).
+- `variables[].default` is the CDO value. If the CDO doesn't have the variable (for example, a variable added without compiling), the `FBPVariableDescription::DefaultValue` string is used instead. In the tested assets this string was always empty.
+- Niagara: lightweight (Stateless) emitters are written with generic reflection only. Scratch pad modules appear in the stack by name only; their contents are in `graphs`. `defaults` has only names, no values (the defaults live in the module asset).
+- Niagara graphs are big (a tested fluid system's JSON is 1.16 million characters, mostly one emitter graph with 604 nodes). Start with `age_niagara_overview`, then take out only what you need with `select`.

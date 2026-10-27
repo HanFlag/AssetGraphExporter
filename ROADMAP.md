@@ -1,118 +1,120 @@
-# 로드맵
+**English** | [한국어](ROADMAP.ko.md)
 
-## 1단계 (0.1.0): 커맨드렛 내보내기
+# Roadmap
 
-상태: 완료 (첫 커밋 `4fae8f6`).
+## Stage 1 (0.1.0): commandlet export
 
-- 범용 리플렉션 내보내기, Blueprint/AnimBP(그래프·바인딩), StateTree(상태·전환·바인딩)
-- 테스트 에셋 3개로 검증했고, unreal-mcp로 확인한 값과 일치했습니다.
-- 에디터를 켠 상태에서도 동작합니다. 이때도 디스크에 저장된 버전을 읽습니다.
-- 같은 에셋은 실행할 때마다 바이트 단위로 같은 JSON이 나옵니다.
-- 측정 결과 (MomentTrigger, 3개 에셋, 2026-10-23)
+Status: done (first commit `4fae8f6`).
 
-| 단계 | 시간 |
+- Generic reflection export, Blueprint/AnimBP (graphs and bindings), StateTree (states, transitions, bindings)
+- Checked on 3 test assets; the values matched what unreal-mcp showed.
+- Works with the editor open, too. Even then it reads the version saved on disk.
+- The same asset gives byte-for-byte the same JSON on every run.
+- Measurements (test project, 3 assets, 2026-10-23)
+
+| Step | Time |
 |---|---|
-| 엔진 시작 | 8.6~12.2초 |
-| 에셋 목록 스캔 | 0.26초 |
-| 로드 + 내보내기 | 약 0.5초 |
-| 전체 | 9.9~13.5초 |
+| Engine start | 8.6–12.2 s |
+| Asset list scan | 0.26 s |
+| Load + export | about 0.5 s |
+| Total | 9.9–13.5 s |
 
-  - 비용은 거의 전부 엔진 시작에서 나옵니다.
-  - 그래서 스캔 범위를 줄이는 최적화는 하지 않기로 했습니다.
+  - Almost all of the cost is the engine start.
+  - So we decided not to optimize by narrowing the scan.
 
-## 엔진 내장 MCP와의 관계 (2026-10-23 조사)
+## Relation to the built-in engine MCP (surveyed 2026-10-23)
 
-UE 5.8에는 `ModelContextProtocol`("Unreal MCP") 플러그인, `ToolsetRegistry`, 툴셋 모음(`Experimental/Toolsets/*`)이 들어 있습니다. 실행 중인 서버에서 도구 목록을 받아 보니 52개 툴셋, 833개 도구였고, 전부 에디터가 켜져 있어야 동작합니다. 조사할 때는 읽기 도구만 호출했고, 에셋은 바뀌지 않았습니다.
+UE 5.8 ships the `ModelContextProtocol` ("Unreal MCP") plugin, `ToolsetRegistry` and a set of toolsets (`Experimental/Toolsets/*`). The tool list from a running server had 52 toolsets and 833 tools, and all of them need the editor to be running. Only read tools were called during the survey, and no assets were changed.
 
-같은 에셋을 양쪽으로 읽어 비교한 결과:
+Results of reading the same assets both ways:
 
-| 항목 | 내장 MCP | 이 플러그인 |
+| Item | Built-in MCP | This plugin |
 |---|---|---|
-| StateTree (`ST_Boss`) | 120번 호출, 49K자 | 1번 실행 |
-| StateTree 바인딩 | 설명 문장만 | 경로로 정리된 목록 |
-| Blueprint (`BP_GA_EnemyDodge`) | 13번 호출, 20K자 | 2.3K자 |
-| BP 그래프 | `read_graph_dsl`이 짧은 스크립트로 보여 줌 (더 읽기 쉬움) | 노드·핀 JSON |
-| AnimBP, 스테이트 머신 | 전용 도구 없음 | 있음 |
-| GA/GE, 몽타주, 노티파이 | 전용 도구 없음 | 범용 내보내기로 일부 |
-| 에디터를 끈 상태 | 불가 | 가능 |
-| 나이아가라 Simulation Stage | 구조상 담을 수 없음 | 2단계에서 추가 |
+| StateTree | 120 calls, 49K chars | 1 run |
+| StateTree bindings | Descriptive sentences only | A list organized by path |
+| Blueprint (GameplayAbility) | 13 calls, 20K chars | 2.3K chars |
+| BP graphs | `read_graph_dsl` shows a short script (easier to read) | Node and pin JSON |
+| AnimBP, state machines | No dedicated tool | Yes |
+| GA/GE, montages, notifies | No dedicated tool | Partly, through the generic export |
+| Editor closed | Not possible | Possible |
+| Niagara Simulation Stages | Its structure can't hold them | Added in stage 2 |
 
-- BP 그래프는 내장 쪽 요약 형식이 더 읽기 쉽습니다. 2단계 MCP 도구에서 그래프 요약을 만들 때 참고합니다(형식만 참고하고, 구현은 우리 것으로 따로 만듭니다).
-- **나이아가라 근거**: 내장 도구가 이미터 구조를 담는 `FNiagaraExt_EmitterTopology`(`NiagaraEditor/Public/NiagaraExternalSystemEditorUtilities.h`)에는 스택 4개(EmitterSpawn, EmitterUpdate, ParticleSpawn, ParticleUpdate) 필드만 있고, Simulation Stage 필드가 없습니다. 나이아가라 플루이드는 계산 대부분을 Simulation Stage에서 하므로, 내장 도구로는 핵심 로직이 보이지 않습니다. 실제로 `NS_HeatLaser_Fluid`에서는 기본 스택 4개 조회도 실패했습니다(원인 미확인).
+- For BP graphs, the built-in summary format is easier to read. We use it as a reference when building the graph summary in the stage 2 MCP tools (the format only; the implementation is our own).
+- **Niagara evidence**: `FNiagaraExt_EmitterTopology` (`NiagaraEditor/Public/NiagaraExternalSystemEditorUtilities.h`), which the built-in tools use to hold the emitter structure, has fields for only 4 stacks (EmitterSpawn, EmitterUpdate, ParticleSpawn, ParticleUpdate) and none for Simulation Stages. Niagara Fluids do most of their work in Simulation Stages, so the built-in tools can't show the core logic. On a tested fluid system, even reading the 4 basic stacks failed (cause not found).
 
-역할 나누기 (2단계까지):
+Division of roles (through stage 2):
 
-- **이 플러그인**: 읽기와 분석. 에디터를 끈 상태에서도 되고, 큰 구조를 한 번에 정리해서 줍니다.
-- **내장 MCP**: 수정, PIE, 테스트, 로그, Config, 플러그인 관리, 머티리얼·나이아가라·PCG 편집.
+- **This plugin**: reading and analysis. Works with the editor closed and gives large structures in one organized answer.
+- **Built-in MCP**: changes, PIE, tests, logs, Config, plugin management, material, Niagara and PCG editing.
 
-3단계부터는 이 플러그인도 고치고 확인합니다. 내장 MCP로 되는 일이라도 더 나은 방식이 있으면 대상입니다(아래).
+From stage 3 on, this plugin also changes and checks things. Even work the built-in MCP can do is in scope if there is a better way (below).
 
-## 2단계: 질문할 때마다 엔진을 띄우지 않기 (B 구조)
+## Stage 2: don't start the engine for every question (structure B)
 
-### 연결 구조 (2026-10-23 결정)
+### Connection layout (decided 2026-10-23)
 
 ```
-Claude Code ──→ 127.0.0.1:8000/mcp  (설정은 하나)
-   ├ 에디터 켜짐: 에디터 안의 Unreal MCP 서버 + 우리 도구 (저장 안 한 변경까지 보임)
-   └ 에디터 꺼짐: Serve.bat → 상주 커맨드렛이 같은 서버를 띄움 + 우리 도구 (디스크 기준)
+Claude Code ──→ 127.0.0.1:8000/mcp  (one setting)
+   ├ editor open:   the Unreal MCP server inside the editor + our tools (sees unsaved changes too)
+   └ editor closed: Serve.bat → a background commandlet runs the same server + our tools (from disk)
 ```
 
-- **도구 등록**: `IModelContextProtocolModule::AddTool`로 내장 MCP 서버에 직접 등록합니다. `ToolsetRegistry`를 거치지 않습니다.
-  - 직접 등록한 도구는 `tools/list`에 바로 나옵니다(`ModelContextProtocolServer.cpp`의 `ProcessListToolsJsonRpcCall`). 툴셋 도구는 `list_toolsets` → `describe_toolset` → `call_tool`을 거쳐야 합니다.
-  - 결과 형식을 우리가 정합니다. ToolsetRegistry를 거치면 문자열 결과가 `{"returnValue":"..."}` 안에 한 번 더 감싸져 따옴표가 전부 `\"`가 됩니다(내장 `list_properties` 결과로 확인).
-- **상주 모드**: 커맨드렛이 내장 서버를 띄우고 끄지 않고 기다립니다.
-  - 엔진이 이 방식을 허용합니다. 커맨드렛에서는 `-ModelContextProtocolStartServer`로 직접 켜라는 주석이 있습니다(`ModelContextProtocolSettings.cpp`). 에디터 커맨드렛도 `UEditorEngine`을 만들고 PostEngineInit까지 거칩니다(`LaunchEngineLoop.cpp`).
-  - HTTP 서버와 MCP 서버는 `FTSTicker`로 돌아가므로, 커맨드렛 루프에서 ticker를 돌리면 됩니다(`HttpServerModule.h`, `ModelContextProtocolServer.cpp`).
-  - C++ 빌드 전에는 DLL 잠금 때문에 꺼야 합니다. `age_shutdown`, 유휴 시간 자동 종료, 에디터가 켜지면 자동 종료로 대응합니다.
-- **폴더**: MCP 부분은 별도 플러그인 `AssetGraphExporterMcp`로 둡니다. Unreal MCP가 Experimental이라 영향 범위를 좁히고, 기본 플러그인을 쓰는 모든 프로젝트에서 Unreal MCP가 강제로 켜지지 않게 하기 위해서입니다.
-- **요약**: 요약 함수(내보낸 JSON → 짧은 텍스트)는 기본 플러그인에 둡니다. MCP 없이도 쓸 수 있습니다.
+- **Tool registration**: registered directly with the built-in MCP server through `IModelContextProtocolModule::AddTool`, not through `ToolsetRegistry`.
+  - Directly registered tools appear in `tools/list` right away (`ProcessListToolsJsonRpcCall` in `ModelContextProtocolServer.cpp`). Toolset tools have to go through `list_toolsets` → `describe_toolset` → `call_tool`.
+  - We decide the result format. Through ToolsetRegistry, string results get wrapped once more inside `{"returnValue":"..."}` and every quote becomes `\"` (checked with the built-in `list_properties` result).
+- **Background mode**: a commandlet starts the built-in server and keeps waiting instead of exiting.
+  - The engine allows this. There is a comment saying commandlets should start it directly with `-ModelContextProtocolStartServer` (`ModelContextProtocolSettings.cpp`). Editor commandlets also create `UEditorEngine` and go through PostEngineInit (`LaunchEngineLoop.cpp`).
+  - The HTTP and MCP servers run on `FTSTicker`, so ticking it in the commandlet loop is enough (`HttpServerModule.h`, `ModelContextProtocolServer.cpp`).
+  - It has to be stopped before building C++ because of DLL locks. Handled with `age_shutdown`, an idle timeout, and stopping automatically when the editor starts.
+- **Folders**: the MCP part is a separate plugin, `AssetGraphExporterMcp`. Unreal MCP is Experimental, so this narrows the impact, and it keeps Unreal MCP from being forced on in every project that uses the main plugin.
+- **Summaries**: the summary functions (exported JSON → short text) live in the main plugin, so they work without MCP.
 
-### 진행 순서 (확정)
+### Order of work (fixed)
 
-1. **2-1. MCP 연결 틀 + AnimBP·StateTree 도구**
-   - 도구 직접 등록, 상주 커맨드렛(`AssetGraphServe`), `Serve.bat`.
-   - 도구: `age_find_assets`, `age_get_asset`, `age_statetree_overview`, `age_statetree_bindings`, `age_animbp_overview`, `age_status`, `age_shutdown`.
-   - 상태: 완료 (2026-10-24, MomentTrigger). 빌드 경고 0. 상주 서버 모드와 에디터 모드 모두 7개 도구가 최상위 목록에 나오고 동작함. 내장 `call_tool`도 에디터 없이 동작함.
-   - 요약 크기: ST_Boss 3.1K자(전체 JSON 39.7K, 내장 MCP 120번 호출 49K), ABP_Boss_SteampunkCat 1.8K자(전체 JSON 127K, 공백 없는 기준).
-   - 시간: 상주 서버 준비 62초(재부팅 뒤 첫 실행, Zen 서버 시작과 셰이더 준비 포함), 이후 호출 4–460 ms. 에디터 모드는 호출마다 약 0.33초(에디터 프레임 간격으로 보임).
-   - 남은 확인: 상주 중 다시 저장된 에셋 다시 읽기(`Content/`를 바꿔야 해서 미시험), 재부팅 없이 다시 켰을 때의 준비 시간.
-2. **2-2. 나이아가라 처리기**
-   - 시스템 → 이미터 → 스택(Simulation Stage 포함) → 모듈 → 입력값, 렌더러, Grid 데이터 인터페이스.
-   - 방식(2026-10-24 결정): 스크립트 그래프를 직접 따라가기. 이유는 엔진 코드로 확인함.
-     - 내장 도구(`UNiagaraExternalEditUtilities`)는 값을 읽을 때마다 스택 화면 모델 전체를 만들고, 스택 네 개만 찾습니다. `NS_HeatLaser_Fluid`에서는 그 네 개도 "Script not found"로 실패했습니다.
-     - 가벼운 공개 API(`SystemAdapter`)는 5.8에서 입력값 읽기가 미완성입니다(`TryGetLocalValue` 등이 항상 실패를 돌려줌).
-     - 모듈 순서·오버라이드 노드를 찾는 엔진 함수는 외부 공개(export)가 아니라 같은 규칙을 직접 구현했습니다. 입력 목록 함수(`GetStackFunctionInputs`)는 공개라 그대로 씁니다.
-   - 1차 결과(2026-10-26, MomentTrigger): 빌드 경고 0. 두 번 내보내기 모두 종료 코드 0(18.2초 / 15.6초), 경고 0.
-     - `NS_HeatLaser_Fluid`: Simulation Stage 25개, 모듈 97개, 렌더러 2개를 읽음(내장 MCP는 이미터 스택을 못 읽음).
-     - `NS_HeatLaser`: 이미터 7개. 내장 MCP `GetModuleInputValues`와 모듈 4개를 비교 — 값이 다른 5건은 모두 내장 쪽이 `Unsupported`로 못 읽은 값, 나머지 차이는 표기 형식뿐, 이 플러그인에만 있고 내장 쪽에 없는 입력은 없음.
-     - 같은 에셋을 두 번 내보내면 `CachedChangeId` 줄만 달랐음 → 그래프에서 제외(2차).
-   - 2차(빌드 대기): `CachedChangeId` 제외, enum 표시 이름(`displayName`), 기본값 그대로인 입력 이름(`defaults`), 스위치에 가려진 설정값 표시(`inactive`).
-   - **활동 창**(2026-10-26 사용자 요청, 웹 페이지 방식 선택): Claude가 MCP로 무엇을 했는지 보는 페이지 `/age/activity`. 에디터·상주 모드 공통, 메모리에만 기록.
-3. **2-3. 검색·diff + 캐시**
-   - C++ ↔ BP 교차 검색, 에셋 참조 관계, git 리비전 diff.
-   - 캐시 + 증분 내보내기(바뀐 `.uasset`만 다시 내보냄)는 여기서 만듭니다. 상주 서버가 매번 최신 파일을 읽으므로 2-1에는 필요 없고, 전체 검색과 리비전 비교에 필요하기 때문입니다.
-4. **BP 그래프 요약(실행 흐름)**: 2-1 범위 밖. 전환 규칙을 식으로 바꾸는 코드를 다시 쓸 수 있으므로 2-1 뒤에 다시 정합니다.
+1. **2-1. MCP connection framework + AnimBP and StateTree tools**
+   - Direct tool registration, the background commandlet (`AssetGraphServe`), `Serve.bat`.
+   - Tools: `age_find_assets`, `age_get_asset`, `age_statetree_overview`, `age_statetree_bindings`, `age_animbp_overview`, `age_status`, `age_shutdown`.
+   - Status: done (2026-10-24). Zero build warnings. In both background-server mode and editor mode, all 7 tools appear in the top-level list and work. The built-in `call_tool` also works without the editor.
+   - Summary sizes: StateTree 3.1K chars (full JSON 39.7K, built-in MCP 120 calls 49K), AnimBP 1.8K chars (full JSON 127K, without whitespace).
+   - Time: background server ready in 62 s (first run after a reboot, including Zen server start and shader preparation), later calls 4–460 ms. In editor mode about 0.33 s per call (looks like the editor's frame interval).
+   - Still to check: re-reading assets saved again while the server runs (not tested, it would mean changing `Content/`), ready time when restarted without a reboot.
+2. **2-2. Niagara handler**
+   - System → emitters → stacks (Simulation Stages included) → modules → input values, renderers, Grid data interfaces.
+   - Approach (decided 2026-10-24): follow the script graphs directly. Reasons checked in the engine code:
+     - The built-in tools (`UNiagaraExternalEditUtilities`) build the whole stack view model every time they read a value, and look for only four stacks. On a tested fluid system even those four failed with "Script not found".
+     - The light public API (`SystemAdapter`) can't read input values yet in 5.8 (`TryGetLocalValue` and others always return failure).
+     - The engine functions that find module order and override nodes aren't exported, so we implemented the same rules ourselves. The input-list function (`GetStackFunctionInputs`) is exported, so we use it as is.
+   - First results (2026-10-26): zero build warnings. Both exports exited with code 0 (18.2 s / 15.6 s), zero warnings.
+     - Fluid system: read 25 Simulation Stages, 97 modules and 2 renderers (the built-in MCP can't read the emitter stacks).
+     - Another Niagara system: 7 emitters. Compared 4 modules with the built-in MCP's `GetModuleInputValues` — the 5 values that differ are all ones the built-in side couldn't read (`Unsupported`); other differences are only formatting; no input exists only on this plugin's side and not on the built-in side.
+     - Exporting the same asset twice differed only in `CachedChangeId` lines → excluded from graphs (second pass).
+   - Second pass (waiting for build): exclude `CachedChangeId`, enum display names (`displayName`), names of inputs left at their default (`defaults`), mark settings hidden by switches (`inactive`).
+   - **Activity page**: a page at `/age/activity` that shows what Claude did through MCP. Shared by editor and background modes, kept in memory only.
+3. **2-3. Search, diff + cache**
+   - C++ ↔ BP cross search, asset references, git revision diff.
+   - The cache + incremental export (re-export only changed `.uasset` files) is built here. 2-1 doesn't need it because the background server reads the latest files every time; project-wide search and revision comparison do.
+4. **BP graph summary (execution flow)**: outside the scope of 2-1. The code that turns transition rules into expressions could be reused, so this is decided again after 2-1.
 
-### 2단계 후보 기능 (설명)
+### Stage 2 candidate features (descriptions)
 
-- **C++ ↔ BP 교차 검색**: 함수 호출 노드와 변수 노드에 대상 클래스·멤버가 정확히 기록돼 있으므로, 추정이 아니라 정확한 값으로 답할 수 있습니다.
-- **리플렉션 심볼 덤프**: UCLASS/UFUNCTION/UPROPERTY와 헤더 위치(메타데이터). 한계: UFUNCTION이 아닌 일반 C++ 함수는 나오지 않습니다.
-- **에셋 참조 관계**: Asset Registry로 "누가 이 에셋을 쓰나"와 "이 에셋이 무엇에 의존하나"를 뽑습니다.
-- **에셋 diff**: git의 이전 리비전과 현재 버전을 내보내 JSON끼리 비교합니다.
-- **연결 고리 추적**: GA → 몽타주 → 애님 노티파이(시간순) → GE. AnimMontage 처리기가 필요합니다.
-- **설정 최종값**: `GConfig`에서 모든 레이어를 합친 최종값과, 그 값을 정한 파일을 보여 줍니다.
-- **BP 컴파일 진단**과 **엔진 업그레이드 점검**: 고아 핀, 없어진 함수를 가리키는 노드 찾기.
+- **C++ ↔ BP cross search**: function call nodes and variable nodes record their target class and member exactly, so the answer is an exact value, not a guess.
+- **Reflection symbol dump**: UCLASS/UFUNCTION/UPROPERTY and header locations (metadata). Limit: plain C++ functions that aren't UFUNCTIONs don't appear.
+- **Asset references**: use the Asset Registry for "who uses this asset" and "what does this asset depend on".
+- **Asset diff**: export an earlier git revision and the current version and compare the JSON.
+- **Chain tracing**: GA → montage → anim notifies (in time order) → GE. Needs an AnimMontage handler.
+- **Final config values**: the final value merged from every `GConfig` layer, and the file that set it.
+- **BP compile diagnostics** and **engine upgrade checks**: find orphaned pins and nodes pointing at removed functions.
 
-## 3단계 (다음): 고치기와 실행해서 확인하기
+## Stage 3 (next): change things and run them to check
 
-목표는 Claude가 "이렇게 하면 된다"고 알려 주는 데서 그치지 않고, 직접 해 보고 실행해서 확인한 뒤 "이렇게 하면 된다, 적용할까요?"라고 묻는 것입니다.
+The goal is for Claude not to stop at "this is how you'd do it", but to try it, run it to check, and then ask "this works — shall I apply it?"
 
-- **수정 모드 두 가지**: 확인 모드(기본, 바꾸기 전에 변경안을 보여 주고 승인받아 적용)와 자동 모드(바로 적용). 언제든 바꿀 수 있습니다.
-- 어느 모드든 무엇을 바꿨는지 남기고, 되돌릴 수 있게 합니다(에디터 Undo, git).
-- 기능은 미리 넓게 만들지 않습니다. 협업하다가 "MCP로는 안 되거나 불편한데 Claude가 하면 잘할 것"이 나오면 그때 추가합니다.
-- 첫 기능 후보: AnimBP 시선 고정(필요한 로직과 Look At 노드를 넣고, 실행해서 본이 대상을 향하는지 확인한 뒤 제안).
-- 이전 계획("에디터를 끈 상태에서만, git에 커밋된 상태에서만 하는 안전한 수정")은 2026-10-27에 이 방식으로 바꿨습니다.
+- **Two edit modes**: confirm mode (the default: shows the proposed change and applies it after approval) and auto mode (applies right away). You can switch at any time.
+- In either mode, what was changed is recorded and can be undone (editor Undo, git).
+- Features aren't built broadly in advance. They are added when, while working together, something comes up that "MCP can't do or does awkwardly, but Claude would do well".
+- First feature candidate: AnimBP look-at (add the needed logic and a Look At node, run it to check the bone faces the target, then propose it).
+- The earlier plan ("safe edits only with the editor closed and only on a committed git state") was replaced by this approach on 2026-10-27.
 
-## 보류
+## On hold
 
-- `.uasset` 직접 파싱(엔진 없이 읽기): 2단계 구조로도 속도가 부족할 때 다시 검토합니다.
+- Parsing `.uasset` directly (reading without the engine): to be reconsidered if structure B is still too slow.

@@ -1,56 +1,66 @@
-# 변경 기록
+**English** | [한국어](CHANGELOG.ko.md)
 
-## 0.2.2 (베타) — 2026-10-27
+# Changelog
 
-사용법을 설치·연결·시작 3단계로 줄였습니다.
+## Unreleased
 
-- **서버 자동 켜기**: 에디터가 열리면 플러그인이 Unreal MCP 서버를 스스로 켭니다. 엔진의 "Auto Start Server"는 사용자마다 따로 켜야 하는 설정이라, 그 단계를 없앴습니다. 끄려면 `-AGENoServerAutoStart`. 상주 서버가 막 꺼지는 중이면 잠시 다시 시도합니다.
-- **에디터 없이 쓰기는 AI가 켭니다**: `AI_GUIDE.md`에 엔진 위치를 찾아(레지스트리의 `InstalledDirectory`) 상주 서버를 직접 켜는 방법을 적었습니다. 사용자는 명령을 칠 필요가 없습니다.
-- README: 사용법 3단계, 어려운 명령 줄은 사용 안내로 옮김.
-- `Serve.bat`: 에디터가 켜져 있는지 보는 확인이 Git Bash에서 실행하면 건너뛰어지던 문제를 고쳤습니다(윈도우 `find`·`tasklist`를 전체 경로로 부름). Git Bash에서 에디터가 켜져 있을 때 1초 만에 거절하고, 꺼져 있을 때는 정상으로 켜지는 것을 확인했습니다.
-- 에디터 모드에서 `age_references`와 `age_guide` 동작을 확인했습니다(상주 모드와 결과 같음).
+- **License**: changed from the tester license to [MIT](LICENSE).
+- **Documentation**: English is now the default language, and every document has a Korean version (`*.ko.md`). Switch with `English | 한국어` at the top of each document.
+- **Notices**: the README's "how it was made and notices" section is now "Notices" (not affiliated with Epic Games and trademarks, the AI data note under the EULA, no warranty).
+- The activity page (`/age/activity`) is now in English.
+- Examples in the documentation and tool descriptions now use names not tied to any project.
 
-## 0.2.1 (베타) — 2026-10-27
+## 0.2.2 (beta) — 2026-10-27
 
-AI가 이 도구를 스스로 익히고, 문제를 사용자를 통해 알려 오게 했습니다.
+Usage is down to three steps: install, connect, start.
 
-- **AI용 안내 `AI_GUIDE.md`**(영어, `AssetGraphExporterMcp/Resources/`): 처음에 사용자에게 알릴 것(무엇인지, 할 수 있는 것과 아직 못 하는 것, 확인 모드·자동 모드), 단계별 연결, 질문별 도구, 효율 규칙, 문제 해결, 피드백 부탁.
-- **`age_guide`**: 도구 설명에 "처음 쓸 때 먼저 부를 것"이 있어, 연결한 AI가 안내를 받습니다.
-- **`age_feedback`**: 문제나 필요한 기능을 사용자 PC(`Saved/AssetGraphExporter/Feedback/feedback.md`, `-AGEFeedbackDir=`로 변경)에 남기고, 내용이 채워진 GitHub 이슈 화면을 브라우저로 엽니다. 사용자가 확인하고 Submit을 누릅니다. 프로젝트 에셋 경로와 사용자 폴더 경로는 자동으로 지웁니다. 받는 곳은 플러그인의 `SupportURL`입니다.
-- `age_*` 도구가 실패하면 결과 끝에 "막혔다면 사용자에게 알리고 age_feedback으로 남겨 달라"는 한 줄이 붙습니다.
-- **라이선스**: MIT에서 [테스트용 라이선스](LICENSE)로 바꿨습니다. 초대받은 사람이 시험·피드백 용도로만 쓰고, 재배포·공개·판매는 금지입니다. 이전 커밋과 0.2.0의 MIT 표기는 누구에게도 배포되기 전에 바뀌었습니다.
-- 에디터 모드에서 `age_find_usages`, `age_diff`, `age_blueprint_overview`, `age_statetree_overview`, `age_niagara_overview` 동작을 확인했습니다.
+- **Server starts on its own**: when the editor opens, the plugin starts the Unreal MCP server itself. The engine's "Auto Start Server" is a per-user setting each person has to turn on, so that step is gone. To prevent it, use `-AGENoServerAutoStart`. If the background server is just shutting down, it retries for a short while.
+- **The AI starts the editor-less mode**: `AI_GUIDE.md` explains how to find the engine (the registry's `InstalledDirectory`) and start the background server directly. The user doesn't need to type commands.
+- README: three-step usage; the harder command lines moved to the Guide.
+- `Serve.bat`: fixed the check for a running editor being skipped when run from Git Bash (Windows `find` and `tasklist` are now called by full path). Checked in Git Bash: refuses within 1 second when the editor is open, starts normally when it is closed.
+- Checked `age_references` and `age_guide` in editor mode (same results as background mode).
 
-## 0.2.0 (베타) — 2026-10-27
+## 0.2.1 (beta) — 2026-10-27
 
-첫 공개 릴리즈입니다. 에셋 구조 내보내기(0.1.0)에 MCP 도구, 나이아가라 처리기, 프로젝트 전체 검색과 버전 비교를 더했습니다.
+The AI now learns the tool by itself and reports problems through the user.
 
-### 요구 사항
-- Unreal Engine 5.8, Win64 (5.8.4에서 빌드와 동작 확인).
-- MCP 도구(`AssetGraphExporterMcp`): 엔진에 들어 있는 Unreal MCP 플러그인(`ModelContextProtocol`, Experimental).
-- 선택 사항: StateTree, Niagara 플러그인. 없으면 그 처리기만 빠지고 나머지는 동작합니다.
-- `age_diff`: git이 PATH에 있어야 합니다.
+- **AI guide `AI_GUIDE.md`** (English, `AssetGraphExporterMcp/Resources/`): what to tell the user first (what it is, what it can and can't do yet, confirm mode and auto mode), step-by-step connection, which tool for which question, efficiency rules, troubleshooting, a request for feedback.
+- **`age_guide`**: its tool description says "call this first", so a connected AI gets the guide.
+- **`age_feedback`**: saves a problem or a needed feature on the user's PC (`Saved/AssetGraphExporter/Feedback/feedback.md`, change with `-AGEFeedbackDir=`) and opens a pre-filled GitHub issue page in the browser. The user checks it and presses Submit. Project asset paths and user folder paths are removed automatically. It goes to the plugin's `SupportURL`.
+- When an `age_*` tool fails, one line is added at the end of the result: "if you're stuck, tell the user and leave it with age_feedback".
+- **License**: changed from MIT to a tester license (invited people, for testing and feedback only).
+- Checked `age_find_usages`, `age_diff`, `age_blueprint_overview`, `age_statetree_overview` and `age_niagara_overview` in editor mode.
 
-### 들어 있는 것
-- **내보내기 (`AssetGraphExporter`)**
-  - 커맨드렛 `AssetGraphExport`: 모든 UObject 에셋을 JSON으로. Blueprint·AnimBP(그래프, 노드, 핀, 바인딩, 스테이트 머신), StateTree(상태, 전환, 바인딩), Niagara System(이미터 스택, Simulation Stage, 모듈 입력값).
-  - `-Incremental`: 바뀐 에셋(자신이나 의존 에셋, C++ 코드)만 다시 내보내기.
-  - 같은 에셋은 매번 바이트 단위로 같은 JSON. JSON 스키마 버전 2.
-- **MCP 도구 (`AssetGraphExporterMcp`)**: 에디터 안이나, 에디터 없이 띄우는 상주 서버(`Serve.bat`)에서 같은 주소로 동작.
-  - `age_find_assets`, `age_get_asset`: 에셋 찾기, 구조 JSON 일부 꺼내기.
-  - `age_blueprint_overview`, `age_animbp_overview`, `age_statetree_overview`, `age_statetree_bindings`, `age_niagara_overview`: 짧은 요약. BP는 실행 흐름을 한 줄씩.
-  - `age_references`: 에셋이 쓰는 것과 그 에셋을 쓰는 것.
-  - `age_find_usages`: C++ 클래스·함수·변수를 쓰는 BP 노드.
-  - `age_diff`: git 예전 버전과 지금의 차이.
-  - `age_status`, `age_shutdown`, 활동 창(`/age/activity`).
+## 0.2.0 (beta) — 2026-10-27
 
-### 확인한 것과 아직 확인하지 않은 것
-- 확인: 한 프로젝트(UE 5.8.4, Win64)에서 빌드 경고 0, 모든 도구를 상주 서버 모드로 호출. 처음 7개 도구는 에디터 모드에서도 호출.
-- 아직: 다른 프로젝트, 다른 플랫폼. `age_references`·`age_find_usages`·`age_diff`·`age_blueprint_overview`의 에디터 모드. 에셋을 다시 저장한 뒤 상주 서버와 증분 내보내기가 새 내용을 읽는지(시험하려면 에셋을 바꿔야 해서).
-- 그 밖의 한계는 [알려진 한계](Documentation/Guide.md#알려진-한계)를 보세요.
+The first release. Adds MCP tools, a Niagara handler, project-wide search and revision diffs to the asset structure export (0.1.0).
 
-### 라이선스
-MIT로 표기했으나 누구에게도 배포하기 전에 0.2.1의 테스트용 라이선스로 바뀌었습니다.
+### Requirements
+- Unreal Engine 5.8, Win64 (built and checked on 5.8.4).
+- MCP tools (`AssetGraphExporterMcp`): the Unreal MCP plugin that ships with the engine (`ModelContextProtocol`, Experimental).
+- Optional: the StateTree and Niagara plugins. Without them, only that handler is missing and the rest works.
+- `age_diff`: git must be on the PATH.
 
-## 0.1.0 — 2026-10-23 (공개 안 함)
-- 커맨드렛 내보내기: 범용 리플렉션, Blueprint/AnimBP, StateTree.
+### What's in it
+- **Export (`AssetGraphExporter`)**
+  - Commandlet `AssetGraphExport`: every UObject asset to JSON. Blueprint and AnimBP (graphs, nodes, pins, bindings, state machines), StateTree (states, transitions, bindings), Niagara System (emitter stacks, Simulation Stages, module input values).
+  - `-Incremental`: export again only assets that changed (the asset itself, its dependencies, or C++ code).
+  - The same asset always gives byte-for-byte the same JSON. JSON schema version 2.
+- **MCP tools (`AssetGraphExporterMcp`)**: work at the same address inside the editor or in a background server started without the editor (`Serve.bat`).
+  - `age_find_assets`, `age_get_asset`: find assets, pull out part of the structure JSON.
+  - `age_blueprint_overview`, `age_animbp_overview`, `age_statetree_overview`, `age_statetree_bindings`, `age_niagara_overview`: short summaries. BP execution flow one line at a time.
+  - `age_references`: what an asset uses and what uses it.
+  - `age_find_usages`: BP nodes that use a C++ class, function or variable.
+  - `age_diff`: differences between an older git revision and now.
+  - `age_status`, `age_shutdown`, the activity page (`/age/activity`).
+
+### Checked and not checked yet
+- Checked: in one project (UE 5.8.4, Win64), zero build warnings, every tool called in background-server mode. The first 7 tools also called in editor mode.
+- Not yet: other projects, other platforms. Editor mode of `age_references`, `age_find_usages`, `age_diff` and `age_blueprint_overview`. Whether the background server and incremental export read new content after an asset is saved again (testing it would mean changing assets).
+- For other limits, see [Known limitations](Documentation/Guide.md#known-limitations).
+
+### License
+MIT.
+
+## 0.1.0 — 2026-10-23 (not released)
+- Commandlet export: generic reflection, Blueprint/AnimBP, StateTree.

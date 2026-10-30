@@ -99,32 +99,106 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
 </main>
 <script>
 "use strict";
-const TOOL_LABELS = {
-  age_find_assets: "Find assets",
-  age_references: "References",
-  age_find_usages: "Find usages",
-  age_diff: "Revision diff",
-  age_guide: "Read the guide",
-  age_feedback: "Leave feedback",
-  age_get_asset: "Read asset structure",
-  age_blueprint_overview: "Blueprint summary",
-  age_statetree_overview: "StateTree summary",
-  age_statetree_bindings: "StateTree bindings",
-  age_animbp_overview: "Anim Blueprint summary",
-  age_niagara_overview: "Niagara summary",
-  age_status: "Check status",
-  age_shutdown: "Request server shutdown",
-};
-const ENGINE_LABELS = {
-  list_toolsets: "List engine tools",
-  describe_toolset: "Describe engine tools",
-  call_tool: "Run engine tool",
-};
-const SOURCE_LABELS = {
-  file: "Saved file",
+// The page follows the browser's language: Korean for Korean browsers, English for every other.
+const KOREAN = (navigator.language || "").toLowerCase().startsWith("ko");
+const TEXT = KOREAN ? {
+  lang: "ko",
+  title: "Claude 활동",
+  footer: "기록은 이 서버의 메모리에만 있고(최근 200개), 서버가 꺼지면 사라집니다. 엔진 내장 도구는 이름만 보입니다. <code>call_tool</code> 안에서 실제로 부른 도구 이름은 엔진 로그에 남지 않습니다.",
+  empty: "Claude가 MCP로 무언가를 확인하면 여기에 한 줄씩 나타납니다.",
+  nothingYet: "아직 기록이 없습니다.",
+  counts: (age, engine) => "이 플러그인 도구 " + age + "번 · 엔진 내장 도구 " + engine + "번",
+  serve: "상주 서버 (저장된 파일)",
+  editor: "에디터",
+  connected: "서버 연결됨",
+  disconnected: "서버 연결 끊김 (꺼졌거나 다시 시작하는 중)",
+  aiConnected: "AI가 연결했습니다",
+  engineTool: "엔진 도구 ",
+  name: (value) => "이름에 \"" + value + "\"",
+  className: (value) => "클래스 " + value,
+  folder: (value) => "폴더 " + value,
+  withDefaults: "· 기본값 포함",
+  thousandChars: "K자",
+  chars: "자",
+  tools: {
+    age_find_assets: "에셋 찾기",
+    age_references: "참조 관계",
+    age_find_usages: "사용처 찾기",
+    age_diff: "버전 비교",
+    age_guide: "사용 안내 읽기",
+    age_feedback: "피드백 남기기",
+    age_get_asset: "에셋 구조 읽기",
+    age_blueprint_overview: "블루프린트 요약",
+    age_statetree_overview: "StateTree 요약",
+    age_statetree_bindings: "StateTree 바인딩",
+    age_animbp_overview: "애님 블루프린트 요약",
+    age_niagara_overview: "나이아가라 요약",
+    age_status: "상태 확인",
+    age_shutdown: "서버 종료 요청",
+  },
+  engine: {
+    list_toolsets: "엔진 도구 목록 보기",
+    describe_toolset: "엔진 도구 설명 보기",
+    call_tool: "엔진 도구 실행",
+  },
+  sources: {
+    file: "저장된 파일",
+    editor: "에디터",
+    editorUnsaved: "에디터 (저장 안 한 변경 포함)",
+  },
+} : {
+  lang: "en",
+  title: "Claude Activity",
+  footer: "Entries live only in this server's memory (the latest 200) and are gone when the server stops. Built-in engine tools show only their name. The tool actually called inside <code>call_tool</code> is not in the engine log.",
+  empty: "When Claude checks something through MCP, it shows up here, one line at a time.",
+  nothingYet: "Nothing recorded yet.",
+  counts: (age, engine) => "This plugin's tools: " + age + " · Built-in engine tools: " + engine,
+  serve: "Background server (saved files)",
   editor: "Editor",
-  editorUnsaved: "Editor (with unsaved changes)",
+  connected: "Connected to the server",
+  disconnected: "Disconnected (the server stopped or is restarting)",
+  aiConnected: "An AI connected",
+  engineTool: "Engine tool ",
+  name: (value) => "name has \"" + value + "\"",
+  className: (value) => "class " + value,
+  folder: (value) => "folder " + value,
+  withDefaults: "· with defaults",
+  thousandChars: "K chars",
+  chars: " chars",
+  tools: {
+    age_find_assets: "Find assets",
+    age_references: "References",
+    age_find_usages: "Find usages",
+    age_diff: "Revision diff",
+    age_guide: "Read the guide",
+    age_feedback: "Leave feedback",
+    age_get_asset: "Read asset structure",
+    age_blueprint_overview: "Blueprint summary",
+    age_statetree_overview: "StateTree summary",
+    age_statetree_bindings: "StateTree bindings",
+    age_animbp_overview: "Anim Blueprint summary",
+    age_niagara_overview: "Niagara summary",
+    age_status: "Check status",
+    age_shutdown: "Request server shutdown",
+  },
+  engine: {
+    list_toolsets: "List engine tools",
+    describe_toolset: "Describe engine tools",
+    call_tool: "Run engine tool",
+  },
+  sources: {
+    file: "Saved file",
+    editor: "Editor",
+    editorUnsaved: "Editor (with unsaved changes)",
+  },
 };
+
+document.documentElement.lang = TEXT.lang;
+document.title = TEXT.title;
+document.querySelector("h1").textContent = TEXT.title;
+document.querySelector("footer").innerHTML = TEXT.footer;
+document.getElementById("empty").textContent = TEXT.empty;
+document.getElementById("counts").textContent = TEXT.nothingYet;
 
 const list = document.getElementById("list");
 const empty = document.getElementById("empty");
@@ -145,16 +219,16 @@ function targetText(entry) {
   if (a.asset) parts.push(shortAsset(a.asset));
   if (a.symbol) parts.push(a.symbol);
   if (a.select) parts.push("· " + a.select);
-  if (a.name) parts.push("name has \"" + a.name + "\"");
-  if (a.class) parts.push("class " + a.class);
-  if (a.path && entry.tool === "age_find_assets") parts.push("folder " + a.path);
+  if (a.name) parts.push(TEXT.name(a.name));
+  if (a.class) parts.push(TEXT.className(a.class));
+  if (a.path && entry.tool === "age_find_assets") parts.push(TEXT.folder(a.path));
   if (a.filter) parts.push("· \"" + a.filter + "\"");
-  if (a.full) parts.push("· with defaults");
+  if (a.full) parts.push(TEXT.withDefaults);
   return parts.join(" ");
 }
 
 function sizeText(chars) {
-  return chars >= 1000 ? (chars / 1000).toFixed(1) + "K chars" : chars + " chars";
+  return chars >= 1000 ? (chars / 1000).toFixed(1) + TEXT.thousandChars : chars + TEXT.chars;
 }
 
 function el(tag, cls, text) {
@@ -171,19 +245,19 @@ function render(entry) {
   let what;
   if (entry.kind === "tool") {
     ageCalls++;
-    what = el("span", "what tool", TOOL_LABELS[entry.tool] || entry.tool);
+    what = el("span", "what tool", TEXT.tools[entry.tool] || entry.tool);
   } else if (entry.kind === "engineTool") {
     engineCalls++;
-    what = el("span", "what engine", ENGINE_LABELS[entry.tool] || ("Engine tool " + entry.tool));
+    what = el("span", "what engine", TEXT.engine[entry.tool] || (TEXT.engineTool + entry.tool));
   } else {
-    what = el("span", "what connect", "An AI connected");
+    what = el("span", "what connect", TEXT.aiConnected);
   }
   body.appendChild(what);
   const target = targetText(entry);
   if (target) body.appendChild(el("span", "target", target));
 
   const chips = el("div", "chips");
-  if (entry.source) chips.appendChild(el("span", "chip", SOURCE_LABELS[entry.source] || entry.source));
+  if (entry.source) chips.appendChild(el("span", "chip", TEXT.sources[entry.source] || entry.source));
   if (entry.chars) chips.appendChild(el("span", "chip", sizeText(entry.chars)));
   if (entry.ms !== undefined) chips.appendChild(el("span", "chip", entry.ms + "ms"));
   if (chips.childNodes.length) body.appendChild(chips);
@@ -197,11 +271,11 @@ function render(entry) {
 
 function updateHeader(data) {
   document.getElementById("project").textContent = data.project || "";
-  document.getElementById("mode").textContent = data.mode === "serve" ? "Background server (saved files)" : "Editor";
+  document.getElementById("mode").textContent = data.mode === "serve" ? TEXT.serve : TEXT.editor;
   const total = ageCalls + engineCalls;
   document.getElementById("counts").textContent = total === 0
-    ? "Nothing recorded yet."
-    : "This plugin's tools: " + ageCalls + " · Built-in engine tools: " + engineCalls;
+    ? TEXT.nothingYet
+    : TEXT.counts(ageCalls, engineCalls);
 }
 
 async function poll() {
@@ -209,7 +283,7 @@ async function poll() {
     const response = await fetch("?after=" + last, { cache: "no-store" });
     const data = await response.json();
     dot.classList.remove("off");
-    dot.title = "Connected to the server";
+    dot.title = TEXT.connected;
     if (data.last < last) {
       // The server was restarted: its numbering starts again.
       list.textContent = "";
@@ -226,7 +300,7 @@ async function poll() {
     updateHeader(data);
   } catch (e) {
     dot.classList.add("off");
-    dot.title = "Disconnected (the server stopped or is restarting)";
+    dot.title = TEXT.disconnected;
   }
 }
 

@@ -11,6 +11,7 @@
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
 #include "HAL/CriticalSection.h"
+#include "HAL/FileManager.h"
 #include "HAL/IConsoleManager.h"
 #include "HAL/PlatformProcess.h"
 #include "HttpPath.h"
@@ -44,7 +45,7 @@ namespace AGE::McpActivityDetail
 	TAutoConsoleVariable<int32> CVarOpenPage(
 		TEXT("AGE.ActivityWindow"),
 		1,
-		TEXT("1: open the Asset Graph Exporter activity page in the browser when an MCP client first connects or calls a tool. 0: never open it by itself (AGE.OpenActivity still does)."));
+		TEXT("1: start the Asset Graph Exporter activity window when an MCP client first connects or calls a tool (an open window just carries on). 0: never start it by itself (AGE.OpenActivity still does)."));
 
 	struct FEntry
 	{
@@ -68,13 +69,15 @@ namespace AGE::McpActivityDetail
 		FCriticalSection Lock;
 		TArray<FEntry> Entries;
 		int64 NextId = 1;
-		/** Set by any record (from any thread); the ticker opens the page once on the game thread. */
+		/** Set by any record (from any thread); the ticker starts the window once on the game thread. */
 		bool bOpenRequested = false;
 		bool bOpened = false;
 
 		TSharedPtr<IHttpRouter> Router;
 		FHttpRouteHandle Route;
 		uint32 RoutePort = 0;
+		/** EnsurePage runs every tick: warn about a path in use once per port. */
+		uint32 BindFailedPort = 0;
 
 		TUniquePtr<FOutputDevice> LogCapture;
 		FTSTicker::FDelegateHandle Ticker;
@@ -167,6 +170,10 @@ namespace AGE::McpActivityDetail
 		{
 			FScopeLock Guard(&S.Lock);
 			Root->SetNumberField(TEXT("last"), static_cast<double>(S.NextId - 1));
+			if (S.Entries.Num() > 0)
+			{
+				Root->SetNumberField(TEXT("idleSeconds"), FMath::RoundToDouble((FDateTime::Now() - S.Entries.Last().Time).GetTotalSeconds()));
+			}
 			for (const FEntry& Entry : S.Entries)
 			{
 				if (Entry.Id <= After)
@@ -261,15 +268,46 @@ namespace AGE::McpActivityDetail
 		}
 	}
 
+	/** Starts the window (its own process, so it outlives the server), or falls back to the page in the browser when it
+	 *  cannot start, e.g. a build without it. The window itself keeps to one per address and knows "don't open again today".
+	 *  It runs from a copy in the user's folder: it stays open all day, and would otherwise keep the file in the plugin
+	 *  folder locked against builds and updates. A newer copy cannot land while it runs, and takes effect the next time it starts. */
+	void StartWindow(const FString& Url, const TCHAR* Arguments)
+	{
+		const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(PluginName);
+		const FString Source = Plugin.IsValid() ? FPaths::ConvertRelativePathToFull(FPaths::Combine(Plugin->GetBaseDir(), TEXT("Binaries"), TEXT("Win64"), TEXT("AGEActivityWindow.exe"))) : FString();
+		if (!Source.IsEmpty() && FPaths::FileExists(Source))
+		{
+			const FString Copy = FPaths::Combine(FPlatformProcess::UserSettingsDir(), TEXT("AssetGraphExporter"), TEXT("AGEActivityWindow.exe"));
+			IFileManager& Files = IFileManager::Get();
+			if (Files.GetTimeStamp(*Source) > Files.GetTimeStamp(*Copy))
+			{
+				Files.Copy(*Copy, *Source);
+			}
+			const FString Exe = FPaths::FileExists(Copy) ? Copy : Source;
+			const FString Parameters = FString::Printf(TEXT("\"%s\" %s"), *Url, Arguments);
+			FProcHandle Process = FPlatformProcess::CreateProc(*Exe, *Parameters, true, false, false, nullptr, 0, nullptr, nullptr);
+			if (Process.IsValid())
+			{
+				FPlatformProcess::CloseProc(Process);
+				return;
+			}
+			UE_LOG(LogAssetGraphExporterMcp, Warning, TEXT("Could not start %s (blocked by security software?). Opening the page in the browser instead."), *Exe);
+		}
+		LaunchPage(Url);
+	}
+
 	bool ShouldOpenByItself()
 	{
 		return CVarOpenPage.GetValueOnGameThread() != 0 && !FParse::Param(FCommandLine::Get(), TEXT("AGENoActivityWindow"));
 	}
 
-	/** Game thread: after new records, makes sure the page exists and opens it once (first time only). */
+	/** Game thread: keeps the page available, and starts the window once after the first record. */
 	bool Tick(float DeltaTime)
 	{
 		FState& S = State();
+		// Every tick, not only after records, so an open window gets answers as soon as the server is up.
+		const FString Url = AGE::Mcp::Activity::EnsurePage();
 		bool bNewRecords = false;
 		bool bOpenedBefore = false;
 		{
@@ -278,14 +316,9 @@ namespace AGE::McpActivityDetail
 			bOpenedBefore = S.bOpened;
 			S.bOpenRequested = false;
 		}
-		if (!bNewRecords)
+		if (bNewRecords && !Url.IsEmpty() && !bOpenedBefore && ShouldOpenByItself())
 		{
-			return true;
-		}
-		const FString Url = AGE::Mcp::Activity::EnsurePage();
-		if (!Url.IsEmpty() && !bOpenedBefore && ShouldOpenByItself())
-		{
-			LaunchPage(Url);
+			StartWindow(Url, TEXT("--auto"));
 			FScopeLock Guard(&S.Lock);
 			S.bOpened = true;
 		}
@@ -351,16 +384,13 @@ void AGE::Mcp::Activity::Startup()
 	S.Ticker = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateStatic(&Tick), 0.25f);
 	S.OpenCommand = IConsoleManager::Get().RegisterConsoleCommand(
 		TEXT("AGE.OpenActivity"),
-		TEXT("Opens the Asset Graph Exporter activity page (what the MCP client asked) in the browser. Needs the Unreal MCP server running."),
+		TEXT("Opens the Asset Graph Exporter activity window (what the MCP client asked), or brings it to the front. Needs the Unreal MCP server running."),
 		FConsoleCommandDelegate::CreateLambda([]()
 		{
-			const FString Url = EnsurePage();
-			if (Url.IsEmpty())
+			if (!OpenWindow())
 			{
 				UE_LOG(LogAssetGraphExporterMcp, Warning, TEXT("The Unreal MCP server is not running, so there is no activity page yet. Start it with ModelContextProtocol.StartServer."));
-				return;
 			}
-			LaunchPage(Url);
 		}),
 		ECVF_Default);
 }
@@ -418,6 +448,18 @@ void AGE::Mcp::Activity::RecordToolCall(const FString& Tool, const FJsonObject& 
 	Add(MoveTemp(Entry));
 }
 
+bool AGE::Mcp::Activity::OpenWindow()
+{
+	using namespace AGE::McpActivityDetail;
+	const FString Url = EnsurePage();
+	if (Url.IsEmpty())
+	{
+		return false;
+	}
+	StartWindow(Url, TEXT(""));
+	return true;
+}
+
 FString AGE::Mcp::Activity::EnsurePage()
 {
 	using namespace AGE::McpActivityDetail;
@@ -431,6 +473,10 @@ FString AGE::Mcp::Activity::EnsurePage()
 	const uint32 Port = Server->GetServerPort();
 	if (S.RoutePort != Port)
 	{
+		if (S.BindFailedPort == Port)
+		{
+			return FString();
+		}
 		UnbindPage();
 		S.Router = FHttpServerModule::Get().GetHttpRouter(Port);
 		if (!S.Router.IsValid())
@@ -442,6 +488,7 @@ FString AGE::Mcp::Activity::EnsurePage()
 		{
 			UE_LOG(LogAssetGraphExporterMcp, Warning, TEXT("Could not add %s to the MCP server on port %u (the path is already in use)."), PagePath, Port);
 			S.Router.Reset();
+			S.BindFailedPort = Port;
 			return FString();
 		}
 		S.RoutePort = Port;

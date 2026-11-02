@@ -16,7 +16,8 @@ AssetGraphExporter/            ← 저장소
   AssetGraphExporterMcp/       ← MCP 연결 플러그인 (선택 설치, Unreal MCP 엔진 플러그인 필요)
     AssetGraphExporterMcp.uplugin
     Source/AssetGraphExporterMcp/         age_* 도구 + 상주 커맨드렛 AssetGraphServe + 활동 창 (Editor 모듈)
-    Resources/Activity.html               활동 창 페이지
+    Source/ActivityWindow/                활동 창 (작은 C# 프로그램, Build.bat이 빌드)
+    Resources/Activity.html               활동 페이지
   Scripts/                     빌드·실행용 배치 파일
   Packaged/                    Build.bat 결과물 (git 무시)
   Logs/                        빌드·실행 로그 (git 무시)
@@ -120,6 +121,7 @@ Claude Code ──→ 127.0.0.1:8000/mcp
 | `age_niagara_overview` | 나이아가라 요약: 사용자 파라미터, 시스템 스택, 이미터마다 실행 순서대로 모든 스택(이벤트 핸들러, **Simulation Stage** 포함)의 모듈과 설정한 입력값, 렌더러 |
 | `age_status` | 지금 대답하는 쪽(에디터 / 상주 서버), 프로젝트, 엔진·플러그인 버전 |
 | `age_shutdown` | 상주 서버 끄기 (에디터 안에서는 아무것도 하지 않음) |
+| `age_open_window` | 활동 창 열기, 또는 앞으로 가져오기 |
 
 요약 도구의 출력 예 (`age_animbp_overview` 일부):
 
@@ -174,16 +176,30 @@ used by (2):
 - 꺼낸 파일은 `<프로젝트>/Saved/AssetGraphExporter/Diff`(실행 인자 `-AGEDiffDir=<폴더>`로 변경)에 두고 `/AGEDiff/<커밋>/...` 패키지로 로드합니다. 에셋 안에서 원래 패키지를 가리키는 참조는 그 임시 패키지로 이어지고, BP는 컴파일하지 않습니다. 비교 전에 임시 패키지 이름은 원래 이름으로 되돌립니다.
 - `/AGEDiff/`는 서버(또는 에디터)가 끝날 때까지 연결된 채로 둡니다. 로드한 예전 버전이 다음 정리 때까지 메모리에 남기 때문입니다.
 
-### 활동 창 (Claude가 MCP로 한 일 보기)
+### 활동 창 (Claude가 MCP로 하는 일 보기)
 
-MCP 서버와 같은 주소에 작은 페이지가 붙습니다: `http://127.0.0.1:8000/age/activity` (포트는 MCP 설정을 따름).
+작은 Windows 프로그램 `AGEActivityWindow.exe`가 AI가 하는 일을 보여 줍니다. AI 연결, 작업 하나하나, 작업 끝남이 나옵니다.
+
+- AI가 처음 연결하거나 도구를 처음 부를 때 스스로 뜹니다. 작업 중인 프로그램의 키보드 입력은 뺏지 않습니다.
+- 별도 프로그램이라 **서버가 꺼져도, 에디터를 닫아도, 빌드해도 창은 꺼지지 않습니다.** 서버가 돌아오면 같은 창이 앞선 기록을 그대로 둔 채 이어 갑니다. 포트마다 창은 하나입니다.
+- "끝났습니다"는 1분 동안 새 요청이 없을 때 나옵니다. MCP에 "AI가 일을 끝냈다"는 신호가 없기 때문입니다. "서버가 꺼졌습니다"는 연결 거부로 판단하므로 정확합니다.
+- 창을 닫으면 다음에 서버를 켤 때 다시 뜹니다. 바꾸려면 **옵션 > 창을 닫았을 때 > 오늘은 다시 열지 않기**를 고릅니다(다음 날 저절로 풀립니다).
+- 언제든 직접 열기: AI에게 말하기(`age_open_window`), 콘솔 명령 `AGE.OpenActivity`, exe 실행. 이미 열려 있으면 앞으로 나옵니다.
+- **옵션 > 테마**: Windows 설정 따르기(기본), 밝게, 어둡게.
+- 스스로 뜨지 않게 하려면: 콘솔 변수 `AGE.ActivityWindow 0` 또는 실행 인자 `-AGENoActivityWindow`.
+- 창은 `%LOCALAPPDATA%\AssetGraphExporter`의 복사본으로 실행됩니다. 그래서 플러그인 폴더의 파일을 잠그지 않습니다. 새 버전은 창을 다음에 켤 때 적용됩니다. 옵션 선택도 같은 폴더에 저장됩니다.
+- `Scripts\Build.bat mcp`가 Windows에 들어 있는 C# 컴파일러로 빌드하므로 따로 설치할 것은 없습니다. 코드 서명은 없습니다. 보안 프로그램이 막거나 빌드에 없으면 대신 아래 페이지가 브라우저로 열립니다.
+
+### 활동 페이지
+
+창은 MCP 서버와 같은 주소에 붙는 작은 페이지를 읽습니다: `http://127.0.0.1:8000/age/activity` (포트는 MCP 설정을 따름). 이 주소를 브라우저로 열어 볼 수도 있습니다.
 에디터 모드와 상주 서버 모드 모두 같은 페이지입니다. 1초마다 새 항목이 위에 추가됩니다.
 
 - `age_*` 호출: 무엇을 했는지(예: "StateTree summary ST_Enemy"), 저장된 파일·에디터 중 어디서 읽었는지, 결과 길이, 걸린 시간, 오류.
 - 엔진 내장 도구: 이름과 시각만. Unreal MCP 서버가 호출마다 남기는 로그 한 줄(`Running tool: '...'`, `ModelContextProtocolServer.cpp`)을 받아 씁니다. `call_tool` 안에서 실제로 부른 도구 이름은 이 로그에 없어서 보이지 않습니다.
 - AI 클라이언트가 새로 연결하면(`Session initialized`) 한 줄 남깁니다.
-- 처음 연결되거나 도구를 처음 부를 때 기본 브라우저로 한 번 열립니다. 끄려면 콘솔 변수 `AGE.ActivityWindow 0` 또는 실행 인자 `-AGENoActivityWindow`. 직접 열기: 콘솔 명령 `AGE.OpenActivity`.
-- 기록은 메모리에만 있습니다(최근 200개). 파일을 쓰지 않고, 서버가 꺼지면 사라집니다.
+- 페이지 맨 위에 서버가 응답하는지와 마지막 활동이 몇 분 전인지 글자로 나옵니다. 열어 둔 탭은 서버를 다시 켜도 계속 동작합니다. 목록은 새로 시작하고, 서버가 돌아오면 상태도 돌아옵니다. 브라우저가 숨은 탭을 늦추거나 얼리므로 숨겨 둔 동안에는 페이지가 뒤처질 수 있습니다. 창은 그렇지 않습니다.
+- 서버는 기록을 메모리에만 둡니다(최근 200개). 서버가 꺼지면 사라지고, 서버가 이 일로 쓰는 파일은 없습니다.
 - 페이지는 MCP 서버와 같은 HTTP 서버(같은 포트)에서 나가므로, 접근 범위도 MCP 서버와 같습니다.
 
 ### 상주 서버 (`Serve.bat`, 커맨드렛 `AssetGraphServe`)

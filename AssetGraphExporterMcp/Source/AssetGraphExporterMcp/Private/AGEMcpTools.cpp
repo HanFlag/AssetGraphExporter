@@ -1097,6 +1097,15 @@ namespace AGE::McpToolsDetail
 		AGE::Mcp::RequestShutdown();
 		return TextResult(TEXT("The background server stops in a few seconds. Start it again with Scripts\\Serve.bat (startup can take up to a minute, mostly on the first start after a reboot)."));
 	}
+
+	FModelContextProtocolToolResult OpenWindow(const FJsonObject& Arguments)
+	{
+		if (!AGE::Mcp::Activity::OpenWindow())
+		{
+			return ErrorResult(TEXT("Could not add the activity page to the MCP server, so the window has nothing to read."));
+		}
+		return TextResult(TEXT("The activity window is open (or was brought to the front). It stays open when the server stops, until the user closes it."));
+	}
 }
 
 TArray<TSharedRef<IModelContextProtocolTool>> AGE::Mcp::CreateTools()
@@ -1244,5 +1253,10 @@ TArray<TSharedRef<IModelContextProtocolTool>> AGE::Mcp::CreateTools()
 		TEXT("Stops the background server started with Scripts\\Serve.bat. Call it before building C++ code: while it runs, the project's DLLs stay loaded and the build cannot overwrite them. Does nothing inside the editor."),
 		FSchema().Build(),
 		&Shutdown));
+
+	Tools.Add(MakeShared<FTool>(TEXT("age_open_window"),
+		TEXT("Opens the activity window that shows the user what you are doing, or brings it to the front. It normally starts by itself; call this when the user asks for it, e.g. after closing it."),
+		FSchema().Build(),
+		&OpenWindow));
 	return Tools;
 }

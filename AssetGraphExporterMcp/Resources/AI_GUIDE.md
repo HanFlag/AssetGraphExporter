@@ -57,6 +57,7 @@ and do not ask them to type engine commands.
 | What changed between git revisions, or since the last commit | `age_diff` |
 | Where answers come from, versions | `age_status` |
 | Stop the background server (required before building C++) | `age_shutdown` |
+| Open the activity window when the user asks (it normally starts by itself) | `age_open_window` |
 | Report a problem or a missing capability | `age_feedback` |
 
 Every answer starts with `source:` — `editor` (includes unsaved changes), `editor (has unsaved changes)`, or

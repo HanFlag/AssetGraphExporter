@@ -36,6 +36,12 @@ rem -Dependencies puts the core plugin next to this one in the temporary host pr
 echo Building AssetGraphExporterMcp ...
 call "%RUNUAT%" BuildPlugin -Plugin="%MCP%" -Package="%ROOT%\Packaged\AssetGraphExporterMcp" -Dependencies="%CORE%" -NoTargetPlatforms > "%ROOT%\Logs\build_mcp.log" 2>&1
 set "RESULT=%ERRORLEVEL%"
+if "%RESULT%"=="0" (
+	rem The activity window, with the C# compiler that ships with Windows, so building it needs nothing installed.
+	echo Building the activity window ... >> "%ROOT%\Logs\build_mcp.log"
+	"%SystemRoot%\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /target:winexe /optimize+ /warnaserror+ /codepage:65001 /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:System.Web.Extensions.dll /out:"%ROOT%\Packaged\AssetGraphExporterMcp\Binaries\Win64\AGEActivityWindow.exe" "%ROOT%\AssetGraphExporterMcp\Source\ActivityWindow\AGEActivityWindow.cs" >> "%ROOT%\Logs\build_mcp.log" 2>&1
+	if errorlevel 1 set "RESULT=1"
+)
 call :ShowLog "%ROOT%\Logs\build_mcp.log" AssetGraphExporterMcp %RESULT%
 exit /b %RESULT%
 

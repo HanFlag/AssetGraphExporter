@@ -16,6 +16,7 @@ AssetGraphExporter/            ← repository
   AssetGraphExporterMcp/       ← MCP plugin (optional, needs the Unreal MCP engine plugin)
     AssetGraphExporterMcp.uplugin
     Source/AssetGraphExporterMcp/         age_* tools + background commandlet AssetGraphServe + activity page (Editor module)
+    Source/ActivityWindow/                activity window (a small C# program, built by Build.bat)
     Resources/Activity.html               activity page
   Scripts/                     batch files for building and running
   Packaged/                    Build.bat output (ignored by git)
@@ -120,6 +121,7 @@ Claude Code ──→ 127.0.0.1:8000/mcp
 | `age_niagara_overview` | Niagara summary: user parameters, system stacks, and for each emitter every stack in execution order (event handlers and **Simulation Stages** included) with its modules and set input values, plus renderers |
 | `age_status` | Which side is answering (editor / background server), the project, engine and plugin versions |
 | `age_shutdown` | Stops the background server (does nothing inside the editor) |
+| `age_open_window` | Opens the activity window, or brings it to the front |
 
 Example output of a summary tool (part of `age_animbp_overview`):
 
@@ -174,16 +176,30 @@ used by (2):
 - Extracted files go to `<Project>/Saved/AssetGraphExporter/Diff` (change with the `-AGEDiffDir=<folder>` argument) and are loaded as `/AGEDiff/<commit>/...` packages. References inside the asset that point to its original packages lead to those temporary packages, and BPs are not compiled. Before comparing, temporary package names are turned back into the original names.
 - `/AGEDiff/` stays mounted until the server (or editor) exits, because loaded old versions stay in memory until the next cleanup.
 
-### Activity page (see what Claude did through MCP)
+### Activity window (see what Claude does through MCP)
 
-A small page is served at the same address as the MCP server: `http://127.0.0.1:8000/age/activity` (the port follows the MCP settings).
+A small Windows program, `AGEActivityWindow.exe`, shows what the AI is doing: it connected, each piece of work, and when it finished.
+
+- It starts by itself when an AI first connects or calls a tool. It doesn't take the keyboard from whatever you are working in.
+- It is its own program, so **it stays open when the server stops, when the editor closes, and during builds.** When a server comes back, the same window carries on and keeps the earlier rows. One window per port.
+- "Finished" appears after a minute without a new request, because MCP has no signal for "the AI is done". "The server stopped" is exact: the connection is refused.
+- If you close it, it comes back with the next server start. To change that: **Options > When this window is closed > Don't open again today** (ends by itself the next day).
+- To open it yourself at any time: ask the AI (`age_open_window`), the console command `AGE.OpenActivity`, or run the exe. If it is already open, it comes to the front.
+- **Options > Theme**: follow Windows (default), light, or dark.
+- To stop it starting by itself: the console variable `AGE.ActivityWindow 0` or the argument `-AGENoActivityWindow`.
+- It runs from a copy in `%LOCALAPPDATA%\AssetGraphExporter`, so it doesn't keep the plugin folder's file locked. A new version takes effect the next time the window starts. Its choices are kept in the same folder.
+- `Scripts\Build.bat mcp` builds it with the C# compiler that ships with Windows, so nothing extra is needed. It has no code signature; if security software blocks it, or a build doesn't include it, the page below opens in the browser instead.
+
+### Activity page
+
+The window reads a small page served at the same address as the MCP server: `http://127.0.0.1:8000/age/activity` (the port follows the MCP settings). You can also open that address in a browser.
 It is the same page in editor mode and background-server mode. New entries are added at the top every second.
 
 - `age_*` calls: what was done (for example "StateTree summary ST_Enemy"), whether it was read from saved files or the editor, result length, time taken, errors.
 - Built-in engine tools: only the name and time. It uses the log line the Unreal MCP server writes for each call (`Running tool: '...'`, `ModelContextProtocolServer.cpp`). The tool actually called inside `call_tool` is not in that log, so it isn't shown.
 - When an AI client connects (`Session initialized`), one line is added.
-- It opens once in the default browser on the first connection or the first tool call. To turn that off, use the console variable `AGE.ActivityWindow 0` or the argument `-AGENoActivityWindow`. To open it yourself: the console command `AGE.OpenActivity`.
-- Entries live only in memory (the latest 200). Nothing is written to files, and they are gone when the server stops.
+- The top of the page says in words whether the server is answering and how long ago the last activity was. A tab left open keeps working across server restarts: the list starts over, and the status comes back when the server does. Browsers slow down or freeze hidden tabs, so the page can lag behind while hidden; the window doesn't.
+- The server keeps entries only in memory (the latest 200), and they are gone when the server stops. The server writes no file for this.
 - The page is served by the same HTTP server (same port) as the MCP server, so its access scope is the same as the MCP server's.
 
 ### Background server (`Serve.bat`, commandlet `AssetGraphServe`)

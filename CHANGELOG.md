@@ -8,6 +8,9 @@
 - **Documentation**: English is now the default language, and every document has a Korean version (`*.ko.md`). Switch with `English | 한국어` at the top of each document.
 - **Notices**: the README's "how it was made and notices" section is now "Notices" (not affiliated with Epic Games and trademarks, the AI data note under the EULA, no warranty).
 - The activity page (`/age/activity`) follows the browser's language: Korean for Korean browsers, English for every other.
+- **Activity window**: a small Windows program replaces the browser tab that opened with every server start. It stays open when the server stops, when the editor closes and during builds, and the same window carries on when a server comes back. It shows the AI connecting, each piece of work, and when it finished (a minute without a new request). If you close it, it comes back with the next server start; **Options** can keep it closed for the day, and choose a light or dark theme. New tool `age_open_window` opens it; `AGE.OpenActivity` does too. Details are in the Guide.
+- The activity page says in words whether the server is answering and when the last activity was, and in the editor it answers before an AI client connects.
+- Fixed: on the activity page, entries could appear twice after the editor was busy for a while.
 - Examples in the documentation and tool descriptions now use names not tied to any project.
 
 ## 0.2.2 (beta) — 2026-10-27

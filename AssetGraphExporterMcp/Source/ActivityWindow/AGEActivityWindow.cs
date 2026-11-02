@@ -301,6 +301,8 @@ namespace AGE
 			ShowSignal = showSignal;
 
 			Text = AGE.Text.Title;
+			// The window does not take the program's icon by itself.
+			Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
 			Size = new Size(1040, 620);
 			MinimumSize = new Size(600, 320);
 			Font = SystemFonts.MessageBoxFont;

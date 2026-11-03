@@ -42,12 +42,10 @@ Results of reading the same assets both ways:
 - For BP graphs, the built-in summary format is easier to read. We use it as a reference when building the graph summary in the stage 2 MCP tools (the format only; the implementation is our own).
 - **Niagara evidence**: `FNiagaraExt_EmitterTopology` (`NiagaraEditor/Public/NiagaraExternalSystemEditorUtilities.h`), which the built-in tools use to hold the emitter structure, has fields for only 4 stacks (EmitterSpawn, EmitterUpdate, ParticleSpawn, ParticleUpdate) and none for Simulation Stages. Niagara Fluids do most of their work in Simulation Stages, so the built-in tools can't show the core logic. On a tested fluid system, even reading the 4 basic stacks failed (cause not found).
 
-Division of roles (through stage 2):
+Division of roles:
 
 - **This plugin**: reading and analysis. Works with the editor closed and gives large structures in one organized answer.
 - **Built-in MCP**: changes, PIE, tests, logs, Config, plugin management, material, Niagara and PCG editing.
-
-From stage 3 on, this plugin also changes and checks things. Even work the built-in MCP can do is in scope if there is a better way (below).
 
 ## Stage 2: don't start the engine for every question (structure B)
 
@@ -108,16 +106,6 @@ Claude Code ──→ 127.0.0.1:8000/mcp  (one setting)
 - **Chain tracing**: GA → montage → anim notifies (in time order) → GE. Needs an AnimMontage handler.
 - **Final config values**: the final value merged from every `GConfig` layer, and the file that set it.
 - **BP compile diagnostics** and **engine upgrade checks**: find orphaned pins and nodes pointing at removed functions.
-
-## Stage 3 (next): change things and run them to check
-
-The goal is for Claude not to stop at "this is how you'd do it", but to try it, run it to check, and then ask "this works — shall I apply it?"
-
-- **Two edit modes**: confirm mode (the default: shows the proposed change and applies it after approval) and auto mode (applies right away). You can switch at any time.
-- In either mode, what was changed is recorded and can be undone (editor Undo, git).
-- Features aren't built broadly in advance. They are added when, while working together, something comes up that "MCP can't do or does awkwardly, but Claude would do well".
-- First feature candidate: AnimBP look-at (add the needed logic and a Look At node, run it to check the bone faces the target, then propose it).
-- The earlier plan ("safe edits only with the editor closed and only on a committed git state") was replaced by this approach on 2026-10-27.
 
 ## On hold
 

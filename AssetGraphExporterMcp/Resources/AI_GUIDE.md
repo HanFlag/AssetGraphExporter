@@ -10,7 +10,7 @@ language; this file is in English only to keep it short.
    StateTrees, Niagara systems, any asset) in one call each, even while the editor is closed, and answer questions the
    built-in Unreal MCP cannot: who uses an asset, which Blueprint nodes use a C++ function, what changed between git
    revisions or between the saved file and the editor.
-2. **What it does not do yet**: these tools do not edit assets yet (planned). Edits go through the built-in Unreal MCP
+2. **What it does not do**: these tools do not edit assets. Edits go through the built-in Unreal MCP
    tools. Levels are only read as plain properties.
 3. **Edit mode** — ask which they want and remember it for the session:
    - **Confirm mode** (default): before any change, show exactly what will change and wait for their approval.

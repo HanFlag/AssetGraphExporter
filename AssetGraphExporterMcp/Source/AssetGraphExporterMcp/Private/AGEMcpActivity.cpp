@@ -456,7 +456,7 @@ void AGE::Mcp::NoteExternalToolStart()
 
 void AGE::Mcp::RecordExternalToolCall(const FString& Tool, const FJsonObject& Arguments, const FModelContextProtocolToolResult& Result, double Milliseconds)
 {
-	// A tool such as age_run can take minutes; its end is activity too.
+	// A tool can run for minutes; its end is activity too.
 	AGE::Mcp::NoteActivity();
 	AGE::Mcp::Activity::RecordToolCall(Tool, Arguments, Result, Milliseconds);
 }

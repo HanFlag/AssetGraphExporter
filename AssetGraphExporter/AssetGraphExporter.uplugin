@@ -1,7 +1,7 @@
 {
 	"FileVersion": 3,
-	"Version": 5,
-	"VersionName": "0.3.0",
+	"Version": 6,
+	"VersionName": "0.3.1",
 	"FriendlyName": "Asset Graph Exporter",
 	"Description": "Exports the structure of Blueprints, Animation Blueprints, StateTrees, Niagara systems and other assets to JSON from a commandlet, without opening the editor UI.",
 	"Category": "Editor",

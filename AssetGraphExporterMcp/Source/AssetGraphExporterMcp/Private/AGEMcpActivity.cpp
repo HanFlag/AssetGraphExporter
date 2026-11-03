@@ -2,6 +2,7 @@
 
 #include "AGEMcpActivity.h"
 #include "AGEMcpState.h"
+#include "AGEMcpToolLog.h"
 #include "IModelContextProtocolModule.h"
 #include "ModelContextProtocolServer.h"
 #include "ModelContextProtocolToolResults.h"
@@ -430,7 +431,7 @@ void AGE::Mcp::Activity::RecordToolCall(const FString& Tool, const FJsonObject& 
 
 	// Only short text arguments; nothing the page does not show.
 	const TSharedRef<FJsonObject> Shown = MakeShared<FJsonObject>();
-	for (const TCHAR* Key : { TEXT("asset"), TEXT("symbol"), TEXT("select"), TEXT("name"), TEXT("path"), TEXT("class"), TEXT("filter") })
+	for (const TCHAR* Key : { TEXT("asset"), TEXT("symbol"), TEXT("select"), TEXT("name"), TEXT("path"), TEXT("class"), TEXT("filter"), TEXT("changeId") })
 	{
 		FString Value;
 		if (Arguments.TryGetStringField(Key, Value) && !Value.TrimStartAndEnd().IsEmpty())
@@ -446,6 +447,18 @@ void AGE::Mcp::Activity::RecordToolCall(const FString& Tool, const FJsonObject& 
 	Entry.Arguments = Shown;
 	ReadResult(Result, Entry);
 	Add(MoveTemp(Entry));
+}
+
+void AGE::Mcp::NoteExternalToolStart()
+{
+	AGE::Mcp::NoteActivity();
+}
+
+void AGE::Mcp::RecordExternalToolCall(const FString& Tool, const FJsonObject& Arguments, const FModelContextProtocolToolResult& Result, double Milliseconds)
+{
+	// A tool such as age_run can take minutes; its end is activity too.
+	AGE::Mcp::NoteActivity();
+	AGE::Mcp::Activity::RecordToolCall(Tool, Arguments, Result, Milliseconds);
 }
 
 bool AGE::Mcp::Activity::OpenWindow()

@@ -197,6 +197,7 @@ It is the same page in editor mode and background-server mode. New entries are a
 
 - `age_*` calls: what was done (for example "StateTree summary ST_Enemy"), whether it was read from saved files or the editor, result length, time taken, errors.
 - Built-in engine tools: only the name and time. It uses the log line the Unreal MCP server writes for each call (`Running tool: '...'`, `ModelContextProtocolServer.cpp`). The tool actually called inside `call_tool` is not in that log, so it isn't shown.
+- Tools that another plugin adds to the same MCP server: listed with their arguments and result like `age_*` calls when that plugin calls `NoteExternalToolStart` and `RecordExternalToolCall` (`AGEMcpToolLog.h`, module `AssetGraphExporterMcp`). A tool whose name doesn't start with `age_` also gets the name-only line above.
 - When an AI client connects (`Session initialized`), one line is added.
 - The top of the page says in words whether the server is answering and how long ago the last activity was. A tab left open keeps working across server restarts: the list starts over, and the status comes back when the server does. Browsers slow down or freeze hidden tabs, so the page can lag behind while hidden; the window doesn't.
 - The server keeps entries only in memory (the latest 200), and they are gone when the server stops. The server writes no file for this.

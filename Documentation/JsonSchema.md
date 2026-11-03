@@ -45,7 +45,7 @@ Version 2: `blueprint.variables[].default` changed from a string to a JSON value
 ```jsonc
 {
   "schemaVersion": 2,
-  "exporter": { "name": "AssetGraphExporter", "version": "0.2.2", "diffOnly": true },
+  "exporter": { "name": "AssetGraphExporter", "version": "0.3.0", "diffOnly": true },
   "engineVersion": "5.8.4",
   "asset": { "path": "/Game/Folder/BP_Thing.BP_Thing", "class": "/Script/Engine.Blueprint" },
   "handler": "Blueprint",          // name of the dedicated handler (omitted if none)

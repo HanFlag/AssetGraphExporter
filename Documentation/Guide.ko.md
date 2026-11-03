@@ -197,6 +197,7 @@ used by (2):
 
 - `age_*` 호출: 무엇을 했는지(예: "StateTree summary ST_Enemy"), 저장된 파일·에디터 중 어디서 읽었는지, 결과 길이, 걸린 시간, 오류.
 - 엔진 내장 도구: 이름과 시각만. Unreal MCP 서버가 호출마다 남기는 로그 한 줄(`Running tool: '...'`, `ModelContextProtocolServer.cpp`)을 받아 씁니다. `call_tool` 안에서 실제로 부른 도구 이름은 이 로그에 없어서 보이지 않습니다.
+- 다른 플러그인이 같은 MCP 서버에 추가한 도구: 그 플러그인이 `NoteExternalToolStart`와 `RecordExternalToolCall`(`AGEMcpToolLog.h`, 모듈 `AssetGraphExporterMcp`)을 부르면 `age_*` 호출처럼 인자와 결과가 나옵니다. 이름이 `age_`로 시작하지 않는 도구는 위의 이름만 나오는 줄도 함께 남습니다.
 - AI 클라이언트가 새로 연결하면(`Session initialized`) 한 줄 남깁니다.
 - 페이지 맨 위에 서버가 응답하는지와 마지막 활동이 몇 분 전인지 글자로 나옵니다. 열어 둔 탭은 서버를 다시 켜도 계속 동작합니다. 목록은 새로 시작하고, 서버가 돌아오면 상태도 돌아옵니다. 브라우저가 숨은 탭을 늦추거나 얼리므로 숨겨 둔 동안에는 페이지가 뒤처질 수 있습니다. 창은 그렇지 않습니다.
 - 서버는 기록을 메모리에만 둡니다(최근 200개). 서버가 꺼지면 사라지고, 서버가 이 일로 쓰는 파일은 없습니다.

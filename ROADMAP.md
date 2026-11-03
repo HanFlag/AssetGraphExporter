@@ -77,8 +77,10 @@ Claude Code ──→ 127.0.0.1:8000/mcp  (one setting)
    - Status: done (2026-10-24). Zero build warnings. In both background-server mode and editor mode, all 7 tools appear in the top-level list and work. The built-in `call_tool` also works without the editor.
    - Summary sizes: StateTree 3.1K chars (full JSON 39.7K, built-in MCP 120 calls 49K), AnimBP 1.8K chars (full JSON 127K, without whitespace).
    - Time: background server ready in 62 s (first run after a reboot, including Zen server start and shader preparation), later calls 4–460 ms. In editor mode about 0.33 s per call (looks like the editor's frame interval).
-   - Still to check: re-reading assets saved again while the server runs (not tested, it would mean changing `Content/`), ready time when restarted without a reboot.
+   - Ready time when restarted without a reboot: 11.4–11.7 s (2026-10-26).
+   - Not tested yet: re-reading assets saved again while the server runs (it would mean changing `Content/`).
 2. **2-2. Niagara handler**
+   - Status: done (2026-10-26).
    - System → emitters → stacks (Simulation Stages included) → modules → input values, renderers, Grid data interfaces.
    - Approach (decided 2026-10-24): follow the script graphs directly. Reasons checked in the engine code:
      - The built-in tools (`UNiagaraExternalEditUtilities`) build the whole stack view model every time they read a value, and look for only four stacks. On a tested fluid system even those four failed with "Script not found".
@@ -88,12 +90,14 @@ Claude Code ──→ 127.0.0.1:8000/mcp  (one setting)
      - Fluid system: read 25 Simulation Stages, 97 modules and 2 renderers (the built-in MCP can't read the emitter stacks).
      - Another Niagara system: 7 emitters. Compared 4 modules with the built-in MCP's `GetModuleInputValues` — the 5 values that differ are all ones the built-in side couldn't read (`Unsupported`); other differences are only formatting; no input exists only on this plugin's side and not on the built-in side.
      - Exporting the same asset twice differed only in `CachedChangeId` lines → excluded from graphs (second pass).
-   - Second pass (waiting for build): exclude `CachedChangeId`, enum display names (`displayName`), names of inputs left at their default (`defaults`), mark settings hidden by switches (`inactive`).
-   - **Activity page**: a page at `/age/activity` that shows what Claude did through MCP. Shared by editor and background modes, kept in memory only.
+   - Second pass (done 2026-10-26; two exports were byte-for-byte the same): exclude `CachedChangeId`, enum display names (`displayName`), names of inputs left at their default (`defaults`), mark settings hidden by switches (`inactive`).
+   - **Activity page**: a page at `/age/activity` that shows what Claude did through MCP. Shared by editor and background modes, kept in memory only. Since 0.3.0 a small Windows program, the activity window, shows this page and stays open across server restarts.
 3. **2-3. Search, diff + cache**
+   - Status: done (2026-10-27).
    - C++ ↔ BP cross search, asset references, git revision diff.
    - The cache + incremental export (re-export only changed `.uasset` files) is built here. 2-1 doesn't need it because the background server reads the latest files every time; project-wide search and revision comparison do.
 4. **BP graph summary (execution flow)**: outside the scope of 2-1. The code that turns transition rules into expressions could be reused, so this is decided again after 2-1.
+   - Status: done (2026-10-26, `age_blueprint_overview` and the execution flow in `age_animbp_overview`).
 
 ### Stage 2 candidate features (descriptions)
 

@@ -19,3 +19,7 @@ CLAUDE.md
 
 # Memory bank (Obsidian vault): kept on this machine only
 Docs/
+
+# Other AI agents: machine-specific rules
+AGENTS.md
+.codex/

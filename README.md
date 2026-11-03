@@ -4,7 +4,7 @@
 
 A UE 5.8 editor plugin that lets Claude read, change and check Unreal assets better than the engine's built-in Unreal MCP does. It works in any project.
 
-This version (0.2.2) reads and analyzes assets, **even with the editor closed**. Next comes changing assets and running them to check the result (a confirm mode by default, an auto mode if you choose it).
+This version (0.3.0) reads and analyzes assets, **even with the editor closed**. Next comes changing assets and running them to check the result (a confirm mode by default, an auto mode if you choose it).
 
 [Releases](https://github.com/HanFlag/AssetGraphExporter/releases) · [AI guide](AssetGraphExporterMcp/Resources/AI_GUIDE.md) · [Guide](Documentation/Guide.md) · [JSON schema](Documentation/JsonSchema.md) · [Changelog](CHANGELOG.md) · [Roadmap](ROADMAP.md)
 
@@ -60,7 +60,7 @@ Compared with the built-in Unreal MCP on the same assets (details in [ROADMAP.md
 - Unreal Engine 5.8, Win64 (checked on 5.8.4). The release zip contains a build for 5.8.4 Win64. For other engine versions, add it to a C++ project and build from source.
 - MCP tools: the Unreal MCP plugin that ships with the engine (`ModelContextProtocol`, Experimental).
 - Optional: the StateTree and Niagara plugins (without them, only that handler is missing). `age_diff` needs git.
-- Not done yet: changing assets (next version), analyzing level contents. Other limits are in [Known limitations](Documentation/Guide.md#known-limitations).
+- Not done yet: changing assets, analyzing level contents. Other limits are in [Known limitations](Documentation/Guide.md#known-limitations).
 
 ## Notices
 

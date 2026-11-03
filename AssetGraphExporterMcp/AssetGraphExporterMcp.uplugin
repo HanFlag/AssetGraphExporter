@@ -1,7 +1,7 @@
 {
 	"FileVersion": 3,
-	"Version": 4,
-	"VersionName": "0.2.2",
+	"Version": 5,
+	"VersionName": "0.3.0",
 	"FriendlyName": "Asset Graph Exporter MCP",
 	"Description": "Adds Asset Graph Exporter tools (age_*) to the engine's Unreal MCP server, and a commandlet (AssetGraphServe) that keeps that server running without the editor.",
 	"Category": "Editor",

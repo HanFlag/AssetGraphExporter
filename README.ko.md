@@ -4,7 +4,7 @@
 
 Claude와 함께 Unreal을 쓸 때, Claude가 엔진 내장 Unreal MCP보다 나은 방식으로 에셋을 읽고, 고치고, 결과를 확인하게 하는 UE 5.8 에디터 플러그인입니다. 어느 프로젝트에나 넣어 씁니다.
 
-지금 버전(0.2.2)에는 에셋을 **에디터를 끈 상태에서도** 읽고 분석하는 기능이 들어 있습니다. 다음은 직접 고치고 실행해서 확인하는 기능입니다(확인 모드가 기본, 자동 모드 선택 가능).
+지금 버전(0.3.0)에는 에셋을 **에디터를 끈 상태에서도** 읽고 분석하는 기능이 들어 있습니다. 다음은 직접 고치고 실행해서 확인하는 기능입니다(확인 모드가 기본, 자동 모드 선택 가능).
 
 [릴리즈 받기](https://github.com/HanFlag/AssetGraphExporter/releases) · [AI용 안내](AssetGraphExporterMcp/Resources/AI_GUIDE.md) · [사용 안내](Documentation/Guide.ko.md) · [JSON 스키마](Documentation/JsonSchema.ko.md) · [변경 기록](CHANGELOG.ko.md) · [로드맵](ROADMAP.ko.md)
 
@@ -60,7 +60,7 @@ Claude와 함께 Unreal을 쓸 때, Claude가 엔진 내장 Unreal MCP보다 나
 - Unreal Engine 5.8, Win64 (5.8.4에서 확인). 릴리즈 zip에는 5.8.4 Win64용 빌드가 들어 있습니다. 다른 엔진 버전에서는 C++ 프로젝트에 넣어 소스로 빌드해야 합니다.
 - MCP 도구: 엔진에 들어 있는 Unreal MCP 플러그인(`ModelContextProtocol`, Experimental).
 - 선택: StateTree, Niagara 플러그인(없으면 그 처리기만 빠짐). `age_diff`는 git이 필요합니다.
-- 아직 하지 않는 것: 에셋 수정(다음 버전), 레벨 내용 분석. 그 밖의 한계는 [알려진 한계](Documentation/Guide.ko.md#알려진-한계).
+- 아직 하지 않는 것: 에셋 수정, 레벨 내용 분석. 그 밖의 한계는 [알려진 한계](Documentation/Guide.ko.md#알려진-한계).
 
 ## 고지
 

@@ -51,6 +51,7 @@ Compared with the built-in Unreal MCP on the same assets (details in [ROADMAP.md
 | `age_find_usages` | BP nodes that use a C++ class, function or variable |
 | `age_diff` | Differences between an older git revision and now |
 | `age_find_assets` · `age_get_asset` | Find assets, pull out part of the structure JSON |
+| `age_level_actors` | What is where in the open level: the actors in a box or radius with location, rotation, scale, bounds and mesh (editor only) |
 | `age_status` · `age_shutdown` | Check status, stop the background server |
 | `age_open_window` | Open the window that shows what the AI is doing |
 | `age_guide` · `age_feedback` | The guide the AI reads first; report a problem (opens a pre-filled GitHub issue page, you press Submit) |

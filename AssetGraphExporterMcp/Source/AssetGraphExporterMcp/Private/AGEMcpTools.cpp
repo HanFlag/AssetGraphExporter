@@ -8,6 +8,7 @@
 #include "AGEJsonDiff.h"
 #include "AGEJsonQuery.h"
 #include "AGEMcpActivity.h"
+#include "AGEMcpLevel.h"
 #include "AGEMcpRevision.h"
 #include "AGEMcpState.h"
 #include "AGESummary.h"
@@ -1098,6 +1099,12 @@ namespace AGE::McpToolsDetail
 		return TextResult(TEXT("The background server stops in a few seconds. Start it again with Scripts\\Serve.bat (startup can take up to a minute, mostly on the first start after a reboot)."));
 	}
 
+	FModelContextProtocolToolResult LevelActorsTool(const FJsonObject& Arguments)
+	{
+		const AGE::Mcp::FLevelActorsAnswer Answer = AGE::Mcp::LevelActors(Arguments);
+		return Answer.bError ? ErrorResult(Answer.Text) : TextResult(Answer.Text);
+	}
+
 	FModelContextProtocolToolResult OpenWindow(const FJsonObject& Arguments)
 	{
 		if (!AGE::Mcp::Activity::OpenWindow())
@@ -1243,6 +1250,29 @@ TArray<TSharedRef<IModelContextProtocolTool>> AGE::Mcp::CreateTools()
 			"For one module's full data or the raw graphs, use age_get_asset with select, e.g. 'niagara.emitters[Name].stacks' or 'niagara.graphs[Name]'."),
 		FSchema().Add(TEXT("asset"), TEXT("string"), AssetText, true).Build(),
 		&NiagaraOverview));
+
+	Tools.Add(MakeShared<FTool>(TEXT("age_level_actors"),
+		TEXT("What is where in the level open in the editor (unsaved changes included; not available from the background server): "
+			"the actors inside a box (min, max) or a sphere (center or around, with radius), or the whole level, in one call. "
+			"An actor counts when its bounds overlap the range (one without bounds, such as a light: when its location is inside). "
+			"One line per actor, nearest to the range's center first: label [object name] (the name alone when both are the same), class, "
+			"'at' location, 'rot' (pitch, yaw, roll) and 'scale' when not 0 and 1, 'box' min-max (world-axis bounds, so a rotated mesh shows the space it really takes), "
+			"'mesh' static or skeletal mesh asset(s), 'hidden' when hidden in the editor. "
+			"World Partition actors in unloaded regions are listed as 'unloaded' with their saved bounds only; nothing is loaded. "
+			"Outliner rules decide which actors are listed (no WorldSettings or builder brush)."),
+		FSchema()
+			.Add(TEXT("min"), TEXT("array"), TEXT("Box range: lowest corner [x, y, z]. Use with max."))
+			.Add(TEXT("max"), TEXT("array"), TEXT("Box range: highest corner [x, y, z]. Use with min."))
+			.Add(TEXT("center"), TEXT("array"), TEXT("Sphere range: center [x, y, z]. Use with radius."))
+			.Add(TEXT("around"), TEXT("string"), TEXT("Sphere range around an actor: its exact label or object name; the center is the middle of its box. Use with radius, instead of center."))
+			.Add(TEXT("radius"), TEXT("number"), TEXT("Sphere radius in cm."))
+			.Add(TEXT("class"), TEXT("string"), TEXT("Comma-separated classes; parents count, e.g. StaticMeshActor, Light, BP_Door. Optional."))
+			.Add(TEXT("name"), TEXT("string"), TEXT("Part of the label or object name, case-insensitive. Optional."))
+			.Add(TEXT("bounds"), TEXT("string"), TEXT("visible (default): components that exist in the game, skipping editor-only helpers such as sprites and a camera's frustum, which can make a character's box many meters wide; "
+				"collision: only those with collision; all: every component, as the engine's GetActorBounds."))
+			.Add(TEXT("limit"), TEXT("integer"), TEXT("Maximum lines, default 100, at most 1000."))
+			.Build(),
+		&LevelActorsTool));
 
 	Tools.Add(MakeShared<FTool>(TEXT("age_status"),
 		TEXT("Where the age_* answers come from (the running editor, including unsaved changes, or the background server reading saved files), plus project, engine and exporter versions."),

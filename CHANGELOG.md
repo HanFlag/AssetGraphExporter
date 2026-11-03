@@ -2,6 +2,11 @@
 
 # Changelog
 
+## Unreleased
+
+- New tool `age_level_actors`: what is where in the level open in the editor, in one call. The actors in a box or radius (or the whole level), one line each with label, object name, class, location, rotation, scale, world-axis bounds and mesh asset. Bounds skip editor-only helpers such as a camera's frustum by default. World Partition actors in unloaded regions are listed with their saved bounds, without loading them.
+- `AGEActorBounds.h`: the same bounds for tools that other plugins add to the server.
+
 ## 0.3.1 (beta) — 2026-11-03
 
 - **License**: changed from MIT to the [PolyForm Strict License 1.0.0](LICENSE). Use for noncommercial purposes is allowed; changing it, making new works based on it, and sharing or selling it are not. Commercial use needs written permission from HanFlag, usually as a paid license. Details are in the README.

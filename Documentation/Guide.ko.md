@@ -119,6 +119,7 @@ Claude Code ──→ 127.0.0.1:8000/mcp
 | `age_blueprint_overview` | BP 요약(Actor, GameplayAbility, Widget 등): 부모 클래스, 인터페이스, 변수와 기본값, 컴포넌트, 이 BP가 바꾼 클래스 기본값, EventGraph·함수·매크로·접힌 그래프의 **실행 흐름** |
 | `age_animbp_overview` | AnimBP 요약: 변수와 기본값, AnimGraph 포즈 흐름, 스테이트 머신의 상태별 포즈와 전환 규칙(식으로), EventGraph·함수의 실행 흐름 |
 | `age_niagara_overview` | 나이아가라 요약: 사용자 파라미터, 시스템 스택, 이미터마다 실행 순서대로 모든 스택(이벤트 핸들러, **Simulation Stage** 포함)의 모듈과 설정한 입력값, 렌더러 |
+| `age_level_actors` | 에디터에 열린 레벨(저장 안 한 변경 포함)에 무엇이 어디에 있는지 호출 한 번에. 상자(`min`, `max`), 공(`center` 또는 액터 이름 `around`, `radius`), 또는 아무것도 안 주면 레벨 전체. `class`(부모 클래스도 맞음)와 `name`으로 거르기. 가까운 순으로 한 줄에 액터 하나: 라벨과 오브젝트 이름, 클래스, 위치, 회전·크기(0과 1이 아닐 때), 세계 축 경계 상자(`box` 최소-최대), 메시 에셋. `bounds`: `visible`(기본)은 스프라이트나 카메라 시야 표시처럼 에디터에서만 쓰는 부품을 빼고 잽니다(이것 때문에 캐릭터 상자가 몇 미터씩 커질 수 있음). `collision`은 충돌 있는 부품만, `all`은 엔진 `GetActorBounds`와 같습니다. 월드 파티션 맵에서 로드 안 된 곳의 액터는 로드하지 않고 `unloaded`와 저장된 경계 상자로 보여 줍니다. 상주 서버에서는 쓸 수 없습니다. |
 | `age_status` | 지금 대답하는 쪽(에디터 / 상주 서버), 프로젝트, 엔진·플러그인 버전 |
 | `age_shutdown` | 상주 서버 끄기 (에디터 안에서는 아무것도 하지 않음) |
 | `age_open_window` | 활동 창 열기, 또는 앞으로 가져오기 |

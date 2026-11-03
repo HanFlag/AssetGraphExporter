@@ -101,6 +101,7 @@ namespace AGE
 			{ "age_statetree_bindings", new[] { "StateTree 바인딩", "StateTree bindings" } },
 			{ "age_animbp_overview", new[] { "애님 블루프린트 요약", "Anim Blueprint summary" } },
 			{ "age_niagara_overview", new[] { "나이아가라 요약", "Niagara summary" } },
+			{ "age_level_actors", new[] { "레벨 액터 읽기", "Read level actors" } },
 			{ "age_status", new[] { "상태 확인", "Check status" } },
 			{ "age_shutdown", new[] { "서버 종료 요청", "Request server shutdown" } },
 			{ "age_open_window", new[] { "활동 창 열기", "Open the activity window" } },

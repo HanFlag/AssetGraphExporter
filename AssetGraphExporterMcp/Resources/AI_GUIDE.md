@@ -55,6 +55,7 @@ and do not ask them to type engine commands.
 | What does this asset use, what uses it | `age_references` |
 | Which Blueprint nodes use this C++ class / function / property (before renaming or removing it) | `age_find_usages` |
 | What changed between git revisions, or since the last commit | `age_diff` |
+| What is where in the open level: actors in a box or radius, their location, bounds and mesh (editor only) | `age_level_actors` |
 | Where answers come from, versions | `age_status` |
 | Stop the background server (required before building C++) | `age_shutdown` |
 | Open the activity window when the user asks (it normally starts by itself) | `age_open_window` |

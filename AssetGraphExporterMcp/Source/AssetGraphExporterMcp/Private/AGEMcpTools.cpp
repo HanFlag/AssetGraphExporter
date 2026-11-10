@@ -1073,7 +1073,7 @@ namespace AGE::McpToolsDetail
 			const double Now = FPlatformTime::Seconds();
 			Lines.Add(TEXT("mode: background server (AssetGraphServe commandlet). Reads the saved .uasset files; the editor is not running."));
 			Lines.Add(FString::Printf(TEXT("running since %s UTC, idle %d min"),
-				*AGE::Mcp::GetServeStartUtc().ToString(TEXT("%Y-%m-%d %H:%M:%S")), FMath::FloorToInt((Now - AGE::Mcp::GetLastActivityTime()) / 60.0)));
+				*AGE::Mcp::GetServeStartUtc().ToString(TEXT("%Y-%m-%d %H:%M:%S")), FMath::FloorToInt32((Now - AGE::Mcp::GetLastActivityTime()) / 60.0)));
 			Lines.Add(AGE::Mcp::GetIdleMinutes() > 0
 				? FString::Printf(TEXT("stops by itself after %d idle minutes, when an Unreal Editor starts, or on age_shutdown"), AGE::Mcp::GetIdleMinutes())
 				: FString(TEXT("stops when an Unreal Editor starts or on age_shutdown")));

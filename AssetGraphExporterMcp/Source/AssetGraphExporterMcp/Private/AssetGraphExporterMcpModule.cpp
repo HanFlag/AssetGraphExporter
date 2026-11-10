@@ -74,7 +74,7 @@ private:
 			return false;
 		}
 		const FModelContextProtocolServer* Server = Mcp->GetServer();
-		if (Server && Server->IsServerRunning())
+		if (Server && Server->IsRunning())
 		{
 			if (AutoStartAttempts > 0)
 			{
@@ -96,7 +96,7 @@ private:
 		}
 		Mcp->StartServer(UE::ModelContextProtocol::GetServerPortNumber(), UE::ModelContextProtocol::GetServerUrlPath());
 		const FModelContextProtocolServer* Started = Mcp->GetServer();
-		if (Started && Started->IsServerRunning())
+		if (Started && Started->IsRunning())
 		{
 			UE_LOG(LogAssetGraphExporterMcp, Display, TEXT("Started the Unreal MCP server: http://127.0.0.1:%u%s (turn off with -AGENoServerAutoStart)"),
 				UE::ModelContextProtocol::GetServerPortNumber(), *UE::ModelContextProtocol::GetServerUrlPath());

@@ -479,11 +479,11 @@ FString AGE::Mcp::Activity::EnsurePage()
 	FState& S = State();
 	IModelContextProtocolModule* Mcp = IModelContextProtocolModule::Get();
 	FModelContextProtocolServer* Server = Mcp ? Mcp->GetServer() : nullptr;
-	if (!Server || !Server->IsServerRunning() || !FHttpServerModule::IsAvailable())
+	if (!Server || !Server->IsRunning() || !FHttpServerModule::IsAvailable())
 	{
 		return FString();
 	}
-	const uint32 Port = Server->GetServerPort();
+	const uint32 Port = Server->GetPort();
 	if (S.RoutePort != Port)
 	{
 		if (S.BindFailedPort == Port)

@@ -4,6 +4,8 @@
 
 ## Unreleased
 
+- Builds on Unreal Engine 5.9 (no longer on 5.8; the last 5.8.4 state is the tag `ue5.8`).
+- `age_niagara_overview` now answers with a short outline by default (module names only). `emitter` shows one emitter in detail and `full` the whole system, as before.
 - New tool `age_level_actors`: what is where in the level open in the editor, in one call. The actors in a box or radius (or the whole level), one line each with label, object name, class, location, rotation, scale, world-axis bounds and mesh asset. Bounds skip editor-only helpers such as a camera's frustum by default. World Partition actors in unloaded regions are listed with their saved bounds, without loading them.
 - `AGEActorBounds.h`: the same bounds for tools that other plugins add to the server.
 

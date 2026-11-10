@@ -34,6 +34,7 @@ namespace AGE::Summary
 	/**
 	 * User parameters, system stacks, then each emitter: settings, every stack in execution order (simulation stages included)
 	 * with one line per module and the inputs that were set, and renderers. Needs the "niagara" section.
+	 * EmitterName: only that emitter, in the same detail. bBrief: an outline instead, with module names only and no settings.
 	 */
-	ASSETGRAPHEXPORTER_API FString NiagaraOverview(const FJsonObject& Export);
+	ASSETGRAPHEXPORTER_API FString NiagaraOverview(const FJsonObject& Export, const FString& EmitterName = FString(), bool bBrief = false);
 }

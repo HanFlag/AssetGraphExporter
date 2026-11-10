@@ -46,7 +46,7 @@ Compared with the built-in Unreal MCP on the same assets (details in [ROADMAP.md
 |---|---|
 | `age_blueprint_overview` · `age_animbp_overview` | BP summary: variables and defaults, execution flow one line at a time. For AnimBPs also the pose flow and state machines |
 | `age_statetree_overview` · `age_statetree_bindings` | StateTree states, conditions, tasks, transitions and bindings |
-| `age_niagara_overview` | For each emitter, the modules and input values of every stack (including Simulation Stages) |
+| `age_niagara_overview` | A short outline of every stack (including Simulation Stages); with `emitter` or `full`, the modules and input values |
 | `age_references` | What this asset uses, and what uses this asset |
 | `age_find_usages` | BP nodes that use a C++ class, function or variable |
 | `age_diff` | Differences between an older git revision and now |

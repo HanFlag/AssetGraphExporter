@@ -397,9 +397,11 @@ namespace AGE::McpToolsDetail
 
 	FModelContextProtocolToolResult NiagaraOverview(const FJsonObject& Arguments)
 	{
-		return SummaryResult(Arguments, TEXT("NiagaraSystem"), TEXT("a Niagara System"), [](const FJsonObject& Export)
+		const FString Emitter = StringArgument(Arguments, TEXT("emitter"));
+		const bool bBrief = Emitter.IsEmpty() && !BoolArgument(Arguments, TEXT("full"), false);
+		return SummaryResult(Arguments, TEXT("NiagaraSystem"), TEXT("a Niagara System"), [&Emitter, bBrief](const FJsonObject& Export)
 		{
-			return AGE::Summary::NiagaraOverview(Export);
+			return AGE::Summary::NiagaraOverview(Export, Emitter, bBrief);
 		});
 	}
 
@@ -1242,13 +1244,18 @@ TArray<TSharedRef<IModelContextProtocolTool>> AGE::Mcp::CreateTools()
 		&AnimBlueprintOverview));
 
 	Tools.Add(MakeShared<FTool>(TEXT("age_niagara_overview"),
-		TEXT("Niagara System summary: user parameters, system stacks, then each emitter (CPU/GPU, parent) with every stack in execution order, "
-			"including event handlers and simulation stages (iteration source, data interface, iterations), and renderers. "
-			"One line per module with the inputs that were set: constants, linked parameters (e.g. User.WorldSpaceSize), dynamic inputs as nested calls, "
+		TEXT("Niagara System summary. Without options it is a short outline: user parameters with their values, system stacks, then each emitter (CPU/GPU, parent) with every stack "
+			"in execution order, including event handlers and simulation stages (iteration source, data interface, iterations), as module names only, and the renderer kinds. "
+			"With emitter set to the name of one emitter it is that emitter in detail, and with full=true the whole system in detail (large: tens of thousands of characters for a fluid system): "
+			"emitter settings, renderer settings and one line per module with the inputs that were set: constants, linked parameters (e.g. User.WorldSpaceSize), dynamic inputs as nested calls, "
 			"data interfaces with their changed settings, custom HLSL; enum values by their editor display names. "
 			"Inputs left at their default are named at the end of the line ({default: ...}); a set input hidden by the current static switches is marked inactive. "
 			"For one module's full data or the raw graphs, use age_get_asset with select, e.g. 'niagara.emitters[Name].stacks' or 'niagara.graphs[Name]'."),
-		FSchema().Add(TEXT("asset"), TEXT("string"), AssetText, true).Build(),
+		FSchema()
+			.Add(TEXT("asset"), TEXT("string"), AssetText, true)
+			.Add(TEXT("emitter"), TEXT("string"), TEXT("Exact name of one emitter to show in detail. Optional."))
+			.Add(TEXT("full"), TEXT("boolean"), TEXT("Every emitter in detail instead of the outline. Default false."))
+			.Build(),
 		&NiagaraOverview));
 
 	Tools.Add(MakeShared<FTool>(TEXT("age_level_actors"),

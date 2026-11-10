@@ -1536,8 +1536,11 @@ namespace AGE::SummaryDetail
 		return Title;
 	}
 
-	/** Header line plus one line per module. Empty stacks are skipped unless bShowEmpty (simulation stages always show). */
-	void WriteNiagaraStack(const FJsonObject& Stack, const FString& Indent, bool bShowEmpty, TArray<FString>& Lines)
+	/**
+	 * Header line plus one line per module. Empty stacks are skipped unless bShowEmpty (simulation stages always show).
+	 * bBrief: one line for the stack, module names only.
+	 */
+	void WriteNiagaraStack(const FJsonObject& Stack, const FString& Indent, bool bShowEmpty, TArray<FString>& Lines, bool bBrief = false)
 	{
 		const FJsonArray& Modules = ArrayField(Stack, TEXT("modules"));
 		const FString Error = StringField(Stack, TEXT("error"));
@@ -1554,6 +1557,19 @@ namespace AGE::SummaryDetail
 		{
 			Title += TEXT(" (no modules)");
 		}
+		if (bBrief)
+		{
+			TArray<FString> Names;
+			for (const TSharedPtr<FJsonValue>& Value : Modules)
+			{
+				if (const FJsonObject* Module = AsObject(Value))
+				{
+					Names.Add((BoolField(*Module, TEXT("enabled"), true) ? TEXT("") : TEXT("(off) ")) + StringField(*Module, TEXT("name")));
+				}
+			}
+			Lines.Add(Names.IsEmpty() ? Title : Title + TEXT(" ") + FString::Join(Names, TEXT(", ")));
+			return;
+		}
 		Lines.Add(Title);
 		for (const TSharedPtr<FJsonValue>& Value : Modules)
 		{
@@ -1564,7 +1580,8 @@ namespace AGE::SummaryDetail
 		}
 	}
 
-	void WriteNiagaraEmitter(const FJsonObject& Emitter, TArray<FString>& Lines)
+	/** bBrief: the header, each stack on one line and the renderer kinds; no settings or module inputs. */
+	void WriteNiagaraEmitter(const FJsonObject& Emitter, TArray<FString>& Lines, bool bBrief = false)
 	{
 		FString Header = TEXT("emitter ") + StringField(Emitter, TEXT("name"));
 		for (const TCHAR* Key : { TEXT("mode"), TEXT("simTarget") })
@@ -1591,21 +1608,40 @@ namespace AGE::SummaryDetail
 		}
 		Lines.Add(Header);
 
-		if (const FJsonObject* Properties = ObjectField(Emitter, TEXT("properties")))
+		if (!bBrief)
 		{
-			Lines.Add(TEXT("  properties: ") + ObjectSettings(*Properties));
-		}
-		const FString Settings = InlineSettings(Emitter, TEXT("settings"));
-		if (!Settings.IsEmpty())
-		{
-			Lines.Add(TEXT("  settings:") + Settings);
+			if (const FJsonObject* Properties = ObjectField(Emitter, TEXT("properties")))
+			{
+				Lines.Add(TEXT("  properties: ") + ObjectSettings(*Properties));
+			}
+			const FString Settings = InlineSettings(Emitter, TEXT("settings"));
+			if (!Settings.IsEmpty())
+			{
+				Lines.Add(TEXT("  settings:") + Settings);
+			}
 		}
 		for (const TSharedPtr<FJsonValue>& Value : ArrayField(Emitter, TEXT("stacks")))
 		{
 			if (const FJsonObject* Stack = AsObject(Value))
 			{
-				WriteNiagaraStack(*Stack, TEXT("  "), StringField(*Stack, TEXT("usage")) == TEXT("SimulationStage"), Lines);
+				WriteNiagaraStack(*Stack, TEXT("  "), StringField(*Stack, TEXT("usage")) == TEXT("SimulationStage"), Lines, bBrief);
 			}
+		}
+		if (bBrief)
+		{
+			TArray<FString> Renderers;
+			for (const TSharedPtr<FJsonValue>& Value : ArrayField(Emitter, TEXT("renderers")))
+			{
+				if (const FJsonObject* Renderer = AsObject(Value))
+				{
+					Renderers.Add(NiagaraClassLabel(StringField(*Renderer, TEXT("$class")), TEXT("RendererProperties")) + (BoolField(*Renderer, TEXT("bIsEnabled"), true) ? TEXT("") : TEXT(" (off)")));
+				}
+			}
+			if (Renderers.Num() > 0)
+			{
+				Lines.Add(TEXT("  renderers: ") + FString::Join(Renderers, TEXT(", ")));
+			}
+			return;
 		}
 		for (const TSharedPtr<FJsonValue>& Value : ArrayField(Emitter, TEXT("renderers")))
 		{
@@ -1859,7 +1895,7 @@ FString AGE::Summary::BlueprintOverview(const FJsonObject& Export)
 	return FString::Join(Lines, TEXT("\n"));
 }
 
-FString AGE::Summary::NiagaraOverview(const FJsonObject& Export)
+FString AGE::Summary::NiagaraOverview(const FJsonObject& Export, const FString& EmitterName, bool bBrief)
 {
 	using namespace AGE::SummaryDetail;
 	const FJsonObject* Niagara = ObjectField(Export, TEXT("niagara"));
@@ -1870,8 +1906,9 @@ FString AGE::Summary::NiagaraOverview(const FJsonObject& Export)
 
 	TArray<FString> Lines;
 	Lines.Add(TEXT("NiagaraSystem ") + AssetPath(Export));
+	const bool bOneEmitter = !EmitterName.IsEmpty();
 	const FString Settings = InlineSettings(Export, TEXT("properties"));
-	if (!Settings.IsEmpty())
+	if (!Settings.IsEmpty() && !bBrief && !bOneEmitter)
 	{
 		Lines.Add(TEXT("settings:") + Settings);
 	}
@@ -1905,13 +1942,32 @@ FString AGE::Summary::NiagaraOverview(const FJsonObject& Export)
 		Lines.Add(TEXT("user: ") + FString::Join(UserParameters, TEXT(", ")));
 	}
 
+	if (bOneEmitter)
+	{
+		TArray<FString> Names;
+		for (const TSharedPtr<FJsonValue>& Value : ArrayField(*Niagara, TEXT("emitters")))
+		{
+			if (const FJsonObject* Emitter = AsObject(Value))
+			{
+				Names.Add(StringField(*Emitter, TEXT("name")));
+				if (Names.Last() == EmitterName)
+				{
+					WriteNiagaraEmitter(*Emitter, Lines);
+					return FString::Join(Lines, TEXT("\n"));
+				}
+			}
+		}
+		Lines.Add(FString::Printf(TEXT("no emitter named '%s' (names are exact). Emitters: %s"), *EmitterName, *FString::Join(Names, TEXT(", "))));
+		return FString::Join(Lines, TEXT("\n"));
+	}
+
 	if (const FJsonObject* SystemJson = ObjectField(*Niagara, TEXT("system")))
 	{
 		for (const TSharedPtr<FJsonValue>& Value : ArrayField(*SystemJson, TEXT("stacks")))
 		{
 			if (const FJsonObject* Stack = AsObject(Value))
 			{
-				WriteNiagaraStack(*Stack, FString(), false, Lines);
+				WriteNiagaraStack(*Stack, FString(), false, Lines, bBrief);
 			}
 		}
 	}
@@ -1919,8 +1975,13 @@ FString AGE::Summary::NiagaraOverview(const FJsonObject& Export)
 	{
 		if (const FJsonObject* Emitter = AsObject(Value))
 		{
-			WriteNiagaraEmitter(*Emitter, Lines);
+			WriteNiagaraEmitter(*Emitter, Lines, bBrief);
 		}
+	}
+	if (bBrief)
+	{
+		Lines.Add(TEXT("This is the outline: module names only. For settings and the inputs of every module call again with emitter set to the name of one emitter, or full=true for the whole system."));
+		return FString::Join(Lines, TEXT("\n"));
 	}
 
 	TArray<FString> Graphs;

@@ -46,7 +46,7 @@ Claude와 함께 Unreal을 쓸 때, Claude가 엔진 내장 Unreal MCP보다 나
 |---|---|
 | `age_blueprint_overview` · `age_animbp_overview` | BP 요약: 변수와 기본값, 실행 흐름을 한 줄씩. AnimBP는 포즈 흐름과 스테이트 머신까지 |
 | `age_statetree_overview` · `age_statetree_bindings` | StateTree 상태, 조건, 태스크, 전환, 바인딩 |
-| `age_niagara_overview` | 이미터마다 모든 스택(Simulation Stage 포함)의 모듈과 입력값 |
+| `age_niagara_overview` | 모든 스택(Simulation Stage 포함)의 짧은 개요. `emitter`나 `full`을 주면 모듈과 입력값까지 |
 | `age_references` | 이 에셋이 쓰는 것, 이 에셋을 쓰는 것 |
 | `age_find_usages` | C++ 클래스·함수·변수를 쓰는 BP 노드 |
 | `age_diff` | git 예전 버전과 지금의 차이 |

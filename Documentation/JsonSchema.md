@@ -151,6 +151,15 @@ UE 5.8 stores this in the node's `Binding` object (`UAnimGraphNodeBinding_Base::
 
 `type` is `Property` or `Function`.
 
+### `bones` (Skeleton, Skeletal Mesh)
+
+The bone hierarchy, which is not a reflected property (the reflected `BoneTree` of a Skeleton has one entry per bone but no names). In the engine's order, a parent before its children; the root has no `parent`. Virtual bones are not in it (a Skeleton lists them in `properties.VirtualBones`).
+
+```jsonc
+"bones": [ { "name": "root" }, { "name": "pelvis", "parent": "root" } ],
+"skeletonBonesNotInMesh": [ "weapon_r" ]   // Skeletal Mesh only: bones of its Skeleton that the mesh does not have
+```
+
 ### `stateTree`
 
 Written from the editor data (`UStateTreeEditorData`), not the compiled runtime data.

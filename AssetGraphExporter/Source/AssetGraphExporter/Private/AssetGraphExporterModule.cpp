@@ -3,6 +3,7 @@
 #include "AGEBlueprintHandler.h"
 #include "AGEHandlerRegistry.h"
 #include "AGELog.h"
+#include "AGESkeletonHandler.h"
 #include "Modules/ModuleManager.h"
 
 DEFINE_LOG_CATEGORY(LogAssetGraphExporter);
@@ -14,12 +15,14 @@ public:
 	{
 		FAGEHandlerRegistry::Get().Register(MakeShared<FAGEBlueprintHandler>());
 		FAGEHandlerRegistry::Get().Register(MakeShared<FAGEAnimBlueprintHandler>());
+		FAGEHandlerRegistry::Get().Register(MakeShared<FAGESkeletonHandler>());
 	}
 
 	virtual void ShutdownModule() override
 	{
 		FAGEHandlerRegistry::Get().Unregister(TEXT("Blueprint"));
 		FAGEHandlerRegistry::Get().Unregister(TEXT("AnimBlueprint"));
+		FAGEHandlerRegistry::Get().Unregister(TEXT("Skeleton"));
 	}
 };
 

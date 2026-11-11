@@ -151,6 +151,15 @@ UE 5.8은 이 정보를 노드의 `Binding` 객체(`UAnimGraphNodeBinding_Base::
 
 `type` 값은 `Property` 또는 `Function`입니다.
 
+### `bones` (스켈레톤, 스켈레탈 메시)
+
+뼈 계층입니다. 리플렉션 속성이 아니라서 따로 씁니다(스켈레톤의 리플렉션 속성 `BoneTree`는 뼈마다 한 칸이지만 이름이 없습니다). 엔진 순서대로, 부모가 자식보다 먼저 나오고, 루트에는 `parent`가 없습니다. 가상 뼈는 들어가지 않습니다(스켈레톤은 `properties.VirtualBones`에 있습니다).
+
+```jsonc
+"bones": [ { "name": "root" }, { "name": "pelvis", "parent": "root" } ],
+"skeletonBonesNotInMesh": [ "weapon_r" ]   // 스켈레탈 메시만: 그 스켈레톤에는 있지만 메시에는 없는 뼈
+```
+
 ### `stateTree`
 
 컴파일된 런타임 데이터가 아니라 에디터 데이터(`UStateTreeEditorData`)를 씁니다.

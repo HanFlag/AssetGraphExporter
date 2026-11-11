@@ -10,8 +10,8 @@ language; this file is in English only to keep it short.
    StateTrees, Niagara systems, any asset) in one call each, even while the editor is closed, and answer questions the
    built-in Unreal MCP cannot: who uses an asset, which Blueprint nodes use a C++ function, what changed between git
    revisions or between the saved file and the editor.
-2. **What it does not do**: these tools do not edit assets. Edits go through the built-in Unreal MCP
-   tools. Levels are only read as plain properties.
+2. <!-- age:edit not-editing -->**What it does not do**: these tools do not edit assets. Edits go through the built-in Unreal MCP
+   tools.<!-- /age:edit --> Levels are only read as plain properties.
 3. **Edit mode** — ask which they want and remember it for the session:
    - **Confirm mode** (default): before any change, show exactly what will change and wait for their approval.
    - **Auto mode**: apply changes directly, then report what changed.
@@ -40,7 +40,8 @@ and do not ask them to type engine commands.
   4. It is ready in about 11 s (up to a minute after a reboot); call `age_status` until it answers.
   5. It stops after 30 idle minutes, when an editor opens (the editor then serves), or on `age_shutdown`.
      Call `age_shutdown` before the user builds C++ code: while it runs, the project's DLLs are locked.
-- The release zip has UE 5.8.4 Win64 binaries; other engine versions need a C++ project so the plugins build from source.
+- A release zip has Win64 binaries for one engine version (its release notes say which); other engine versions need a
+  C++ project so the plugins build from source.
 
 ## 3. Which tool for which question
 
@@ -69,8 +70,8 @@ saved file or an earlier export.
 
 - Start with an overview tool; use `age_get_asset` with `select` only for the part you need.
   When `age_get_asset` returns an outline instead of JSON, narrow `select` rather than raising `maxChars`.
-- Prefer one `age_*` call over many built-in calls for reading. Use built-in tools for what `age_*` does not do
-  (editing, PIE, logs, viewport capture).
+- Prefer one `age_*` call over many built-in calls for reading. <!-- age:edit built-in -->Use built-in tools for what `age_*` does not do
+  (editing, PIE, logs, viewport capture).<!-- /age:edit -->
 - Run `age_find_usages` before renaming or removing a C++ member, and `age_diff` to answer "what changed".
 - The first `age_find_usages` over a large project exports every Blueprint once (seconds to a minute); later calls
   reuse the cache.
@@ -79,7 +80,7 @@ saved file or an earlier export.
 
 1. Read the current state with `age_*`.
 2. Plan the change. In confirm mode, show it (assets, nodes, pins, values) and wait.
-3. Apply it (built-in tools for now), compile, save if asked.
+3. Apply it <!-- age:edit apply -->(built-in tools for now)<!-- /age:edit -->, compile, save if asked.
 4. Verify with evidence: compile result, logs, running the game if relevant, and `age_get_asset` / `age_diff` to show
    exactly what changed.
 5. Report what changed and the evidence. Do not claim it works without evidence.

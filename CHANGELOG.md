@@ -9,6 +9,7 @@
 - New tool `age_level_actors`: what is where in the level open in the editor, in one call. The actors in a box or radius (or the whole level), one line each with label, object name, class, location, rotation, scale, world-axis bounds and mesh asset. Bounds skip editor-only helpers such as a camera's frustum by default. World Partition actors in unloaded regions are listed with their saved bounds, without loading them.
 - `AGEActorBounds.h`: the same bounds for tools that other plugins add to the server.
 - Skeletons and skeletal meshes get a `bones` section: each bone's name and parent. A skeletal mesh also lists the bones of its skeleton that the mesh does not have (`skeletonBonesNotInMesh`).
+- `age_status` says whether an editing plugin is installed, and `age_guide` then describes its tools instead of saying that the tools only read.
 
 ## 0.3.1 (beta) — 2026-11-03
 

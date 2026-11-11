@@ -927,6 +927,60 @@ namespace AGE::McpToolsDetail
 	// ---- Guide and feedback ----
 
 	const TCHAR* const McpPluginName = TEXT("AssetGraphExporterMcp");
+	/** An optional plugin that adds editing tools; it is looked up by name only, with no dependency on it. */
+	const TCHAR* const EditPluginName = TEXT("AssetGraphExporterEdit");
+
+	const TCHAR* const EditMarkOpen = TEXT("<!-- age:edit ");
+	const TCHAR* const EditMarkClose = TEXT("<!-- /age:edit -->");
+
+	/** The text after each <!-- age:edit KEY --> mark of the editing plugin's guide, up to the next mark. Text before the first mark is a note for its authors. */
+	TMap<FString, FString> ReadEditBlocks(const FString& EditGuide)
+	{
+		TMap<FString, FString> Blocks;
+		int32 Mark = EditGuide.Find(EditMarkOpen, ESearchCase::CaseSensitive);
+		while (Mark != INDEX_NONE)
+		{
+			const int32 KeyStart = Mark + FCString::Strlen(EditMarkOpen);
+			const int32 KeyEnd = EditGuide.Find(TEXT("-->"), ESearchCase::CaseSensitive, ESearchDir::FromStart, KeyStart);
+			if (KeyEnd == INDEX_NONE)
+			{
+				break;
+			}
+			const int32 TextStart = KeyEnd + 3;
+			const int32 Next = EditGuide.Find(EditMarkOpen, ESearchCase::CaseSensitive, ESearchDir::FromStart, TextStart);
+			Blocks.Add(EditGuide.Mid(KeyStart, KeyEnd - KeyStart).TrimStartAndEnd(),
+				EditGuide.Mid(TextStart, (Next == INDEX_NONE ? EditGuide.Len() : Next) - TextStart).TrimStartAndEnd());
+			Mark = Next;
+		}
+		return Blocks;
+	}
+
+	/**
+	 * AI_GUIDE.md marks what is only true without the editing plugin as <!-- age:edit KEY -->text<!-- /age:edit -->.
+	 * The marks are always removed; the text is replaced by the editing plugin's block of the same key when there is one.
+	 */
+	FString ResolveEditMarks(const FString& Guide, const TMap<FString, FString>& Blocks)
+	{
+		FString Result;
+		int32 Done = 0;
+		for (;;)
+		{
+			const int32 Mark = Guide.Find(EditMarkOpen, ESearchCase::CaseSensitive, ESearchDir::FromStart, Done);
+			const int32 KeyStart = Mark == INDEX_NONE ? INDEX_NONE : Mark + FCString::Strlen(EditMarkOpen);
+			const int32 KeyEnd = KeyStart == INDEX_NONE ? INDEX_NONE : Guide.Find(TEXT("-->"), ESearchCase::CaseSensitive, ESearchDir::FromStart, KeyStart);
+			const int32 Close = KeyEnd == INDEX_NONE ? INDEX_NONE : Guide.Find(EditMarkClose, ESearchCase::CaseSensitive, ESearchDir::FromStart, KeyEnd);
+			if (Close == INDEX_NONE)
+			{
+				Result += Guide.Mid(Done);
+				return Result;
+			}
+			Result += Guide.Mid(Done, Mark - Done);
+			const FString Key = Guide.Mid(KeyStart, KeyEnd - KeyStart).TrimStartAndEnd();
+			const FString* Block = Blocks.Find(Key);
+			Result += Block ? *Block : Guide.Mid(KeyEnd + 3, Close - KeyEnd - 3);
+			Done = Close + FCString::Strlen(EditMarkClose);
+		}
+	}
 
 	FModelContextProtocolToolResult Guide(const FJsonObject& Arguments)
 	{
@@ -936,6 +990,22 @@ namespace AGE::McpToolsDetail
 		if (File.IsEmpty() || !FFileHelper::LoadFileToString(Text, *File))
 		{
 			return UE::ModelContextProtocol::MakeErrorResult(FString::Printf(TEXT("AI_GUIDE.md was not found next to the plugin (%s)."), *File));
+		}
+		// With the editing plugin, its guide replaces the marked sentences and adds a section at the end ("append").
+		TMap<FString, FString> Blocks;
+		if (const TSharedPtr<IPlugin> EditPlugin = IPluginManager::Get().FindEnabledPlugin(EditPluginName))
+		{
+			FString EditGuide;
+			if (FFileHelper::LoadFileToString(EditGuide, *FPaths::Combine(EditPlugin->GetBaseDir(), TEXT("Resources"), TEXT("AI_GUIDE_EDIT.md"))))
+			{
+				Blocks = ReadEditBlocks(EditGuide);
+			}
+		}
+		Text = ResolveEditMarks(Text, Blocks);
+		if (const FString* Append = Blocks.Find(TEXT("append")))
+		{
+			Text.TrimEndInline();
+			Text += TEXT("\n\n") + *Append + TEXT("\n");
 		}
 		return TextResult(Text);
 	}
@@ -1088,6 +1158,11 @@ namespace AGE::McpToolsDetail
 		Lines.Add(FString::Printf(TEXT("project: %s"), FApp::GetProjectName()));
 		Lines.Add(FString::Printf(TEXT("engine: %s"), *FEngineVersion::Current().ToString()));
 		Lines.Add(FString::Printf(TEXT("exporter: AssetGraphExporter %s (schema %d)"), AGE::ExporterVersion, AGE::SchemaVersion));
+		// Without it, the name of the editing plugin is not mentioned.
+		const TSharedPtr<IPlugin> EditPlugin = IPluginManager::Get().FindEnabledPlugin(EditPluginName);
+		Lines.Add(EditPlugin.IsValid()
+			? FString::Printf(TEXT("editing: %s %s is installed; age_guide explains the editing tools and confirm/auto mode"), *EditPlugin->GetName(), *EditPlugin->GetDescriptor().VersionName)
+			: FString(TEXT("editing: no editing plugin installed; the age_* tools only read")));
 		return TextResult(FString::Join(Lines, TEXT("\n")));
 	}
 

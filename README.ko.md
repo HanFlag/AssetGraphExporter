@@ -52,7 +52,7 @@ Claude와 함께 Unreal을 쓸 때, Claude가 엔진 내장 Unreal MCP보다 나
 | `age_diff` | git 예전 버전과 지금의 차이 |
 | `age_find_assets` · `age_get_asset` | 에셋 찾기, 구조 JSON 일부 꺼내기 |
 | `age_level_actors` | 열린 레벨에 무엇이 어디에 있나: 상자나 반경 안 액터의 위치·회전·크기·경계 상자·메시 (에디터에서만) |
-| `age_status` · `age_shutdown` | 상태 확인, 상주 서버 끄기 |
+| `age_status` · `age_shutdown` | 상태 확인(고치기 플러그인이 설치됐는지도), 상주 서버 끄기 |
 | `age_open_window` | AI가 하는 일을 보여 주는 창 열기 |
 | `age_guide` · `age_feedback` | AI가 처음 읽는 사용 안내, 문제 보고(내용이 채워진 GitHub 이슈 화면을 열어 사용자가 Submit) |
 

@@ -77,7 +77,7 @@
 | 맵 | 객체. 키는 텍스트 표기 |
 | 델리게이트 등 그 밖의 타입 | 엔진의 텍스트 표기 |
 
-`Transient`와 `Deprecated` 속성은 쓰지 않습니다. 시퀀서 객체(`UMovieSceneSignedObject`, 예: 애니메이션의 데이터 모델)의 `Signature`도 쓰지 않습니다. 엔진이 객체가 바뀌었다고 표시할 때마다 새 GUID를 주기 때문에, 다시 불러오면 같은 에셋이 다르게 내보내지기 때문입니다.
+`Transient`와 `Deprecated` 속성은 쓰지 않습니다. 시퀀서 객체(`UMovieSceneSignedObject`, 예: 애니메이션의 데이터 모델)의 `Signature`도 쓰지 않습니다. 엔진이 객체가 바뀌었다고 표시할 때마다 새 GUID를 주기 때문에, 다시 불러오면 같은 에셋이 다르게 내보내지기 때문입니다. 같은 이유로 Anim Blueprint 상태·전이의 이벤트(`StateEntered`, `StateLeft`, `StateFullyBlended`, `TransitionStart`, `TransitionEnd`, `TransitionInterrupt`)의 `Guid`도 쓰지 않습니다. 비어 있으면 엔진이 이벤트를 다시 읽을 때마다(되돌리기 포함) 새 무작위 값을 채우기 때문입니다. 애니메이션 노티파이의 `Guid`는 씁니다. 기본(diff) 모드에서 기본값과 다른 점이 이런 쓰지 않는 값뿐인 구조체는 `{}`로 쓰지 않고 뺍니다.
 
 `age_get_asset`에 `details: true`를 주면 써진 객체마다 Details 패널에 보이는 속성에 대해 `"$details": {"키": {"displayName": ..., "category": ...}}`가 붙습니다. 패널이 보여 주는 줄 이름과 섹션 제목입니다(예: `"InitialUpdateFunction": {"displayName": "On Initial Update", "category": "Functions"}`). Blueprint 변수에는 `displayName`이 붙습니다. 커맨드렛 내보내기에는 없습니다.
 

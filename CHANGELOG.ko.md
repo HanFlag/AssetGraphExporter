@@ -14,6 +14,8 @@
 - 애니메이션(과 다른 시퀀서 데이터)을 디스크에서 다시 불러와도 같게 내보내집니다. 엔진이 바뀜 표시 때마다 새로 주는 `Signature` GUID를 더 이상 쓰지 않습니다.
 - `age_get_asset`에 `details: true`: 값마다 Details 패널의 이름과 섹션이 붙고(`$details`, 예: `InitialUpdateFunction`은 "Functions" 아래 "On Initial Update"), Blueprint 변수에는 표시 이름이 붙습니다. 기본 출력은 그대로입니다.
 - `age_animbp_overview`가 AnimGraph 노드마다 바꾼 설정을 뒤에 붙입니다. 예: `Look At Bone: Head_M(Look at Location=@LookAtTarget) [LookAt_Axis.Axis=(0,-1,0), LookAtClamp=30, InterpolationType=Sinusoidal]`.
+- 에디터에서 되돌리기를 해도 Anim Blueprint가 같게 내보내집니다. 상태·전이의 이벤트(`StateEntered`, `TransitionStart` 등)의 `Guid`는 엔진이 다시 읽을 때 새 무작위 값을 채우므로 더 이상 쓰지 않습니다. 애니메이션 노티파이의 `Guid`는 그대로 씁니다. 기본값과 다른 점이 쓰지 않는 값뿐인 구조체는 빈 `{}`로 쓰지 않고 뺍니다.
+- `age_animbp_overview`가 꺼진 전이를 표시합니다: `Idle -> Attack if IsAttacking  [disabled, blend 0.1s]`.
 
 ## 0.3.1 (베타) — 2026-11-03
 

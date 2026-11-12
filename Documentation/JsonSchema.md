@@ -77,7 +77,7 @@ Version 2: `blueprint.variables[].default` changed from a string to a JSON value
 | Maps | Object. Keys in their text form |
 | Delegates and other types | The engine's text form |
 
-`Transient` and `Deprecated` properties are not written. Neither is `Signature` of Sequencer objects (`UMovieSceneSignedObject`, e.g. an animation's data model): the engine gives it a new GUID whenever the object is marked as changed, so the same asset would export differently after a reload.
+`Transient` and `Deprecated` properties are not written. Neither is `Signature` of Sequencer objects (`UMovieSceneSignedObject`, e.g. an animation's data model): the engine gives it a new GUID whenever the object is marked as changed, so the same asset would export differently after a reload. For the same reason the `Guid` of the events of Anim Blueprint states and transitions (`StateEntered`, `StateLeft`, `StateFullyBlended`, `TransitionStart`, `TransitionEnd`, `TransitionInterrupt`) is not written: the engine fills an empty one with a new random value whenever it reads the event back, an undo included. The `Guid` of an animation's notifies is written. In the default (diff) mode a struct that differs from its default only in values that are not written is left out, not written as `{}`.
 
 With `age_get_asset` `details: true`, every written object also gets `"$details": {"Key": {"displayName": ..., "category": ...}}` for its properties shown in the Details panel: the row name and the section title the panel shows (e.g. `"InitialUpdateFunction": {"displayName": "On Initial Update", "category": "Functions"}`). Blueprint variables get `displayName`. Not in commandlet exports.
 

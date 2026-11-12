@@ -1400,6 +1400,11 @@ namespace AGE::SummaryDetail
 				{
 					Extras.Add(TEXT("two-way"));
 				}
+				// First, so a transition that is never taken does not read as a live one.
+				if (BoolField(*Properties, TEXT("bDisabled"), false))
+				{
+					Extras.Insert(TEXT("disabled"), 0);
+				}
 			}
 			FString Line = FString::Printf(TEXT("  %s -> %s if %s"), *From, *To, *Rule);
 			if (Extras.Num() > 0)

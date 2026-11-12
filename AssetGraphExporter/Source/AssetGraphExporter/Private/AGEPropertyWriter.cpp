@@ -2,6 +2,7 @@
 
 #include "AGEPropertyWriter.h"
 #include "AGEExportContext.h"
+#include "AnimStateNodeBase.h"
 #include "EdGraph/EdGraph.h"
 #include "EdGraph/EdGraphNode.h"
 #include "ObjectEditorUtils.h"
@@ -59,17 +60,29 @@ namespace
 	 * UMovieSceneSignedObject::Signature is a fresh GUID on every MarkAsChanged ("a GUID and not a hash", MovieSceneSignedObject.h);
 	 * animation data models and sequences reload with new ones. Matched by name to avoid a MovieScene module dependency.
 	 */
-	bool IsVolatileProperty(const FProperty& Property)
+	bool IsVolatileProperty(const FProperty& Property, const UObject* Owner)
 	{
 		static const FName SignatureName(TEXT("Signature"));
 		static const FName SignedObjectName(TEXT("MovieSceneSignedObject"));
 		static const FName MovieScenePackage(TEXT("/Script/MovieScene"));
-		if (Property.GetFName() != SignatureName)
+		static const FName GuidName(TEXT("Guid"));
+		static const FName NotifyEventName(TEXT("AnimNotifyEvent"));
+		static const FName EnginePackage(TEXT("/Script/Engine"));
+		if (Property.GetFName() == SignatureName)
 		{
-			return false;
+			const UClass* Class = Property.GetOwnerClass();
+			return Class && Class->GetFName() == SignedObjectName && Class->GetPackage()->GetFName() == MovieScenePackage;
 		}
-		const UClass* Owner = Property.GetOwnerClass();
-		return Owner && Owner->GetFName() == SignedObjectName && Owner->GetPackage()->GetFName() == MovieScenePackage;
+		// FAnimNotifyEvent::PostSerialize gives an empty Guid a fresh one whenever the event is read back, undo included (AnimTypes.cpp).
+		// The events of a state or transition (StateEntered, TransitionStart, ...) start empty, so an undo changed their export.
+		// An animation's notifies keep theirs: they get one when added, and editing tools name notifies by it.
+		// Matched by name: FAnimNotifyEvent::StaticStruct() is not exported from Engine.
+		if (Property.GetFName() == GuidName && Owner && Owner->IsA<UAnimStateNodeBase>())
+		{
+			const UStruct* Struct = Property.GetOwnerStruct();
+			return Struct && Struct->GetFName() == NotifyEventName && Struct->GetPackage()->GetFName() == EnginePackage;
+		}
+		return false;
 	}
 
 	/**
@@ -169,7 +182,7 @@ TSharedRef<FJsonObject> FAGEPropertyWriter::WriteFields(const UStruct& Struct, c
 	for (TFieldIterator<FProperty> It(&Struct); It; ++It)
 	{
 		const FProperty& Property = **It;
-		if (Property.HasAnyPropertyFlags(CPF_Transient | CPF_Deprecated) || IsVolatileProperty(Property))
+		if (Property.HasAnyPropertyFlags(CPF_Transient | CPF_Deprecated) || IsVolatileProperty(Property, Owner))
 		{
 			continue;
 		}
@@ -191,7 +204,14 @@ TSharedRef<FJsonObject> FAGEPropertyWriter::WriteFields(const UStruct& Struct, c
 			{
 				continue;
 			}
-			Json->SetField(Key, WriteValue(Property, Value, Default, Owner));
+			const TSharedPtr<FJsonValue> Written = WriteValue(Property, Value, Default, Owner);
+			// A struct that differs only in fields that are not written (transient, volatile) would read as an empty change.
+			const TSharedPtr<FJsonObject>* WrittenObject = nullptr;
+			if (Default && Property.IsA<FStructProperty>() && Written->TryGetObject(WrittenObject) && (*WrittenObject)->Values.IsEmpty())
+			{
+				continue;
+			}
+			Json->SetField(Key, Written);
 		}
 		else
 		{

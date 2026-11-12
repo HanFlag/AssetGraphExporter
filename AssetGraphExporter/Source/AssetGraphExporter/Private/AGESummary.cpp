@@ -925,6 +925,43 @@ namespace AGE::SummaryDetail
 
 	// ---- StateTree ----
 
+	/**
+	 * " {"Order":"Melee"}": the non-default values of a node whose description is only its name (a C++ or
+	 * Blueprint node without its own description text, or a renamed node), so two nodes of one type with
+	 * different settings read differently. A node with its own description already shows its values there.
+	 */
+	FString StateTreeNodeValues(const FJsonObject& Node)
+	{
+		const FString Description = StringField(Node, TEXT("description"));
+		if (!Description.IsEmpty() && Description != StringField(Node, TEXT("name")))
+		{
+			return FString();
+		}
+		const TSharedRef<FJsonObject> Values = MakeShared<FJsonObject>();
+		for (const TCHAR* Section : { TEXT("node"), TEXT("instance"), TEXT("instanceObject") })
+		{
+			if (const FJsonObject* Object = ObjectField(Node, Section))
+			{
+				for (const auto& Pair : Object->Values)
+				{
+					const FString Key(*Pair.Key);
+					// "$class"/"$name" of an instance object, the name override, and flags written as "(disabled)" etc.
+					if (!Key.StartsWith(TEXT("$")) && Key != TEXT("Name") && Key != TEXT("bTaskEnabled")
+						&& Key != TEXT("bConditionEnabled") && Key != TEXT("bConsideredForCompletion"))
+					{
+						Values->SetField(Key, Pair.Value);
+					}
+				}
+			}
+		}
+		if (Values->Values.Num() == 0)
+		{
+			return FString();
+		}
+		const FString Text = Condensed(MakeShared<FJsonValueObject>(Values));
+		return Text.Len() <= MaxInlineSettingsLength ? TEXT(" ") + Text : FString::Printf(TEXT(" {%d settings}"), Values->Values.Num());
+	}
+
 	/** "Track Player.Distance to Player < 1,000.0 [StateTreeCompareFloatCondition]" */
 	FString StateTreeNodeText(const FJsonObject& Node, bool bIsTask)
 	{
@@ -933,7 +970,7 @@ namespace AGE::SummaryDetail
 		{
 			Text = StringField(Node, TEXT("name"));
 		}
-		Text = OneLine(Text) + FString::Printf(TEXT(" [%s]"), *ShortName(StringField(Node, TEXT("type"))));
+		Text = OneLine(Text) + FString::Printf(TEXT(" [%s]"), *ShortName(StringField(Node, TEXT("type")))) + StateTreeNodeValues(Node);
 		if (const FJsonObject* NodeData = ObjectField(Node, TEXT("node")))
 		{
 			if (!BoolField(*NodeData, TEXT("bTaskEnabled"), true) || !BoolField(*NodeData, TEXT("bConditionEnabled"), true))
@@ -977,7 +1014,7 @@ namespace AGE::SummaryDetail
 				Text += TEXT("(");
 			}
 			FString Description = StringField(*Condition, TEXT("description"));
-			Text += OneLine(Description.IsEmpty() ? StringField(*Condition, TEXT("name")) : Description);
+			Text += OneLine(Description.IsEmpty() ? StringField(*Condition, TEXT("name")) : Description) + StateTreeNodeValues(*Condition);
 			PreviousIndent = Indent;
 		}
 		for (int32 Close = 0; Close < PreviousIndent; ++Close)

@@ -16,6 +16,7 @@
 - `age_animbp_overview` shows each AnimGraph node's changed settings after it, e.g. `Look At Bone: Head_M(Look at Location=@LookAtTarget) [LookAt_Axis.Axis=(0,-1,0), LookAtClamp=30, InterpolationType=Sinusoidal]`.
 - Anim Blueprints export the same after an undo in the editor: the `Guid` of a state's or transition's events (`StateEntered`, `TransitionStart`, ...), which the engine fills with a new random value when it reads them back, is no longer written. An animation's notifies keep their `Guid`. A struct that differs from its default only in values that are not written is left out instead of being written as an empty `{}`.
 - `age_animbp_overview` marks a disabled transition: `Idle -> Attack if IsAttacking  [disabled, blend 0.1s]`.
+- `age_statetree_overview` shows the changed values of a task, condition or evaluator that has no description text of its own (common for C++ nodes), e.g. `task: Circle Strafe [STTask_CircleStrafe] {"Radius":1200,"MinDuration":4}`. Two nodes of one type with different settings no longer look the same. Nodes whose description already shows their values are unchanged.
 
 ## 0.3.1 (beta) — 2026-11-03
 

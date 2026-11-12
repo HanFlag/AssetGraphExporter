@@ -49,10 +49,10 @@ and do not ask them to type engine commands.
 |---|---|
 | Find assets by name, folder, class | `age_find_assets` |
 | What does this Blueprint do (variables, defaults, execution flow) | `age_blueprint_overview` |
-| Animation Blueprint: pose flow, state machines, transition rules, event graph | `age_animbp_overview` |
+| Animation Blueprint: pose flow with node settings, state machines, transition rules, event graph | `age_animbp_overview` |
 | StateTree: states, conditions, tasks, transitions / exact bindings | `age_statetree_overview` / `age_statetree_bindings` |
 | Niagara: outline first (stacks incl. simulation stages, module names); `emitter` for one emitter with module inputs, `full` for all | `age_niagara_overview` |
-| Raw structure or one part of any asset | `age_get_asset` with `select` |
+| Raw structure or one part of any asset; `details: true` adds each value's Details-panel name and section | `age_get_asset` with `select` |
 | What does this asset use, what uses it | `age_references` |
 | Which Blueprint nodes use this C++ class / function / property (before renaming or removing it) | `age_find_usages` |
 | What changed between git revisions, or since the last commit | `age_diff` |

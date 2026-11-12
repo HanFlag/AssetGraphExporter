@@ -21,6 +21,9 @@ struct ASSETGRAPHEXPORTER_API FAGEExportContext
 	/** true: only values that differ from the archetype / struct defaults are written. -Full turns it off. */
 	bool bDiffOnly = true;
 
+	/** true: each written object also gets "$details" (Details-panel display name and category of its editable properties). */
+	bool bWriteDetails = false;
+
 	/** Limit for nested owned-object expansion, so a broken object graph cannot recurse forever. */
 	int32 MaxObjectDepth = 12;
 

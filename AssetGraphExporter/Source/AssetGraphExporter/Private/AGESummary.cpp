@@ -735,6 +735,105 @@ namespace AGE::SummaryDetail
 		TSet<FString> Written;
 	};
 
+	FString ValueText(const TSharedPtr<FJsonValue>& Value);
+
+	/** "(0,-1,0)" for an object of one to four numbers (a vector, rotator or color), otherwise empty. */
+	FString NumberTuple(const FJsonObject& Object)
+	{
+		if (Object.Values.Num() == 0 || Object.Values.Num() > 4)
+		{
+			return FString();
+		}
+		TArray<FString> Numbers;
+		for (const auto& Pair : Object.Values)
+		{
+			if (!Pair.Value.IsValid() || Pair.Value->Type != EJson::Number)
+			{
+				return FString();
+			}
+			Numbers.Add(FString::SanitizeFloat(Pair.Value->AsNumber(), 0));
+		}
+		return TEXT("(") + FString::Join(Numbers, TEXT(",")) + TEXT(")");
+	}
+
+	/** Settings as "Path=value": nested structs as dotted paths, number groups as tuples. */
+	void FlattenSettings(const FString& Prefix, const FJsonObject& Object, TArray<TPair<FString, FString>>& OutSettings)
+	{
+		for (const auto& Pair : Object.Values)
+		{
+			const FString Key(*Pair.Key);
+			if (Key.StartsWith(TEXT("$")))
+			{
+				continue;
+			}
+			const FString Path = Prefix.IsEmpty() ? Key : Prefix + TEXT(".") + Key;
+			if (const FJsonObject* Child = AsObject(Pair.Value))
+			{
+				const FString Tuple = NumberTuple(*Child);
+				if (Tuple.IsEmpty())
+				{
+					FlattenSettings(Path, *Child, OutSettings);
+				}
+				else
+				{
+					OutSettings.Emplace(Path, Tuple);
+				}
+				continue;
+			}
+			OutSettings.Emplace(Path, ValueText(Pair.Value));
+		}
+	}
+
+	/**
+	 * " [LookAt_Axis.Axis=(0,-1,0), LookAtClamp=30]": the anim node's own settings that differ from the defaults ("properties.Node").
+	 * Left out: values fed by a pin or a binding (Skipped, written as arguments already) and texts the title already shows
+	 * (bone names, asset names). Long lists end with "+N more".
+	 */
+	FString NodeSettings(const FJsonObject& Node, const FString& Title, const TSet<FString>& Skipped)
+	{
+		const FJsonObject* Properties = ObjectField(Node, TEXT("properties"));
+		const FJsonObject* Settings = Properties ? ObjectField(*Properties, TEXT("Node")) : nullptr;
+		if (!Settings)
+		{
+			return FString();
+		}
+		TArray<TPair<FString, FString>> Flat;
+		FlattenSettings(FString(), *Settings, Flat);
+
+		TArray<FString> Parts;
+		int32 Length = 0;
+		int32 More = 0;
+		for (const TPair<FString, FString>& Setting : Flat)
+		{
+			FString Root = Setting.Key;
+			Setting.Key.Split(TEXT("."), &Root, nullptr);
+			const bool bTextInTitle = !Setting.Value.IsEmpty() && !Setting.Value.StartsWith(TEXT("(")) && !FCString::IsNumeric(*Setting.Value)
+				&& Setting.Value != TEXT("true") && Setting.Value != TEXT("false") && Title.Contains(Setting.Value);
+			if (Skipped.Contains(Root) || bTextInTitle)
+			{
+				continue;
+			}
+			const FString Part = Setting.Key + TEXT("=") + Setting.Value;
+			if (Parts.Num() > 0 && Length + Part.Len() > MaxInlineSettingsLength)
+			{
+				++More;
+				continue;
+			}
+			Parts.Add(Part);
+			Length += Part.Len() + 2;
+		}
+		if (Parts.IsEmpty())
+		{
+			return FString();
+		}
+		FString Text = TEXT(" [") + FString::Join(Parts, TEXT(", "));
+		if (More > 0)
+		{
+			Text += FString::Printf(TEXT(", +%d more"), More);
+		}
+		return Text + TEXT("]");
+	}
+
 	/** Writes anim graph pose flow: "Slot 'DefaultSlot' <- Main State Machine". */
 	class FPoseWriter
 	{
@@ -786,15 +885,17 @@ namespace AGE::SummaryDetail
 			return Upstream.IsEmpty() ? Text : Text + TEXT(" <- ") + Upstream;
 		}
 
-		/** Node title plus the values that come from elsewhere: linked non-pose pins and property-access bindings. */
+		/** Node title plus the values that come from elsewhere (linked non-pose pins, property-access bindings), then its own settings. */
 		FString Label(const FJsonObject& Node) const
 		{
 			TArray<FString> Arguments;
+			TSet<FString> FedProperties;
 			for (const FJsonObject* Pin : Pins(Node))
 			{
 				if (IsInput(*Pin) && !IsPosePin(*Pin) && !IsExec(*Pin) && FirstLink(*Pin))
 				{
 					Arguments.Add(FString::Printf(TEXT("%s=%s"), *PinLabel(*Pin), *Expressions.InputValue(*Pin)));
+					FedProperties.Add(StringField(*Pin, TEXT("name")));
 				}
 			}
 			for (const TSharedPtr<FJsonValue>& Value : ArrayField(Node, TEXT("animBindings")))
@@ -809,11 +910,13 @@ namespace AGE::SummaryDetail
 							Path = StringField(*Binding, TEXT("path"));
 						}
 						Arguments.Add(FString::Printf(TEXT("%s=@%s"), *StringField(*Binding, TEXT("property")), *Path));
+						FedProperties.Add(StringField(*Binding, TEXT("property")));
 					}
 				}
 			}
 			const FString Title = OneLine(StringField(Node, TEXT("title")));
-			return Arguments.IsEmpty() ? Title : FString::Printf(TEXT("%s(%s)"), *Title, *FString::Join(Arguments, TEXT(", ")));
+			const FString Settings = NodeSettings(Node, Title, FedProperties);
+			return (Arguments.IsEmpty() ? Title : FString::Printf(TEXT("%s(%s)"), *Title, *FString::Join(Arguments, TEXT(", ")))) + Settings;
 		}
 
 		const FGraphView& View;

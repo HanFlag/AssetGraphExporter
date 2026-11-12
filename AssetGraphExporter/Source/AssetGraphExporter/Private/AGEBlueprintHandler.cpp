@@ -37,10 +37,15 @@ namespace
 	};
 
 	/** ClassDefaults is the "classDefaults" object (CDO values), or null when the Blueprint has no CDO. */
-	TSharedRef<FJsonObject> WriteVariable(const FBPVariableDescription& Variable, const FJsonObject* ClassDefaults)
+	TSharedRef<FJsonObject> WriteVariable(const FBPVariableDescription& Variable, const FJsonObject* ClassDefaults, bool bWriteDetails)
 	{
 		TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
 		Json->SetStringField(TEXT("name"), Variable.VarName.ToString());
+		if (bWriteDetails)
+		{
+			// The compiler gives the variable's property this name as its DisplayName (the name the Details panel shows).
+			Json->SetStringField(TEXT("displayName"), Variable.FriendlyName);
+		}
 		Json->SetStringField(TEXT("guid"), AGE::GuidToString(Variable.VarGuid));
 		Json->SetObjectField(TEXT("type"), FAGEGraphWriter::WritePinType(Variable.VarType));
 		if (!Variable.Category.IsEmpty())
@@ -209,7 +214,7 @@ void FAGEBlueprintHandler::Export(const UObject& Asset, FAGEExportContext& Conte
 	TArray<TSharedPtr<FJsonValue>> Variables;
 	for (const FBPVariableDescription& Variable : Blueprint.NewVariables)
 	{
-		Variables.Add(MakeShared<FJsonValueObject>(WriteVariable(Variable, ClassDefaults.Get())));
+		Variables.Add(MakeShared<FJsonValueObject>(WriteVariable(Variable, ClassDefaults.Get(), Context.bWriteDetails)));
 	}
 	Section->SetArrayField(TEXT("variables"), Variables);
 

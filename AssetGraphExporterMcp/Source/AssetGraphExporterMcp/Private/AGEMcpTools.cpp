@@ -252,10 +252,11 @@ namespace AGE::McpToolsDetail
 		return Loaded;
 	}
 
-	TSharedRef<FJsonObject> ExportAsset(const UObject& Asset, bool bFull)
+	TSharedRef<FJsonObject> ExportAsset(const UObject& Asset, bool bFull, bool bDetails = false)
 	{
 		FAGEExportContext Context;
 		Context.bDiffOnly = !bFull;
+		Context.bWriteDetails = bDetails;
 		return FAGEAssetExporter::ExportAsset(Asset, Context);
 	}
 
@@ -344,7 +345,7 @@ namespace AGE::McpToolsDetail
 		const FString SelectPath = StringArgument(Arguments, TEXT("select"));
 		const int32 MaxChars = FMath::Max(IntArgument(Arguments, TEXT("maxChars"), DefaultMaxChars), 1000);
 
-		const TSharedPtr<FJsonValue> Root = MakeShared<FJsonValueObject>(ExportAsset(*Loaded.Asset, BoolArgument(Arguments, TEXT("full"), false)));
+		const TSharedPtr<FJsonValue> Root = MakeShared<FJsonValueObject>(ExportAsset(*Loaded.Asset, BoolArgument(Arguments, TEXT("full"), false), BoolArgument(Arguments, TEXT("details"), false)));
 		FString SelectError;
 		const TSharedPtr<FJsonValue> Selected = AGE::JsonQuery::Select(Root, SelectPath, SelectError);
 		if (!Selected.IsValid())
@@ -1280,6 +1281,8 @@ TArray<TSharedRef<IModelContextProtocolTool>> AGE::Mcp::CreateTools()
 			.Add(TEXT("asset"), TEXT("string"), AssetText, true)
 			.Add(TEXT("select"), TEXT("string"), TEXT("Path inside the JSON: keys separated by '.', [n] for an array index, [Name] for the item whose name/path/title is Name. Optional."))
 			.Add(TEXT("full"), TEXT("boolean"), TEXT("Write every value, including defaults. Default false."))
+			.Add(TEXT("details"), TEXT("boolean"), TEXT("Add the Details-panel name and section of the values, to point the user to the exact row: each object gets "
+				"\"$details\": {\"Key\": {\"displayName\", \"category\"}} for its editable properties, Blueprint variables get \"displayName\". Default false."))
 			.Add(TEXT("maxChars"), TEXT("integer"), TEXT("Longest JSON returned before switching to an outline. Default 40000."))
 			.Build(),
 		&GetAsset));

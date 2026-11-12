@@ -33,6 +33,7 @@
 | BP의 `classDefaults` | 부모 클래스의 CDO. 즉 Class Defaults 패널에서 이 BP가 바꾼 값만 나옵니다. 이 BP가 새로 추가한 변수는 항상 나옵니다. |
 | 구조체 값(배열 요소, `FInstancedStruct` 내용) | 새로 만든 같은 타입의 구조체 |
 | 파라미터 백(`FInstancedPropertyBag`) | 비교하지 않고 항상 전부 씁니다(사용자 데이터이므로). |
+| 벡터, 회전, 색처럼 숫자 4개 이하로 된 구조체 | 통째로 비교: 한 칸이라도 다르면 모든 칸을 씁니다(`{"Y":-1}`이 아니라 `{"X":0,"Y":-1,"Z":0}`). |
 
 `-Full`을 주면 이 비교를 끄고 전부 씁니다.
 
@@ -68,6 +69,7 @@
 | soft 참조 | 경로 문자열. 대상을 로드하지 않습니다. |
 | 에셋이 소유한 객체(같은 패키지 안의 Instanced 또는 outer가 소유자인 객체) | `{"$class", "$name", ...속성}`로 펼쳐서 씁니다. 같은 객체가 두 번째로 나오면 경로만 씁니다. |
 | 일반 구조체 | 객체 |
+| 숫자 4개 이하로 된 구조체(FVector, FRotator, FLinearColor 등) | 모든 칸이 있는 객체 |
 | 텍스트 표기가 있는 구조체(FGuid, FSoftObjectPath, FGameplayTag 등) | 문자열 |
 | `FInstancedStruct` | `{"$type": 구조체 경로, ...필드}`. 비어 있으면 null |
 | `FInstancedPropertyBag` | `{파라미터 이름: 값}` |
@@ -75,7 +77,9 @@
 | 맵 | 객체. 키는 텍스트 표기 |
 | 델리게이트 등 그 밖의 타입 | 엔진의 텍스트 표기 |
 
-`Transient`와 `Deprecated` 속성은 쓰지 않습니다.
+`Transient`와 `Deprecated` 속성은 쓰지 않습니다. 시퀀서 객체(`UMovieSceneSignedObject`, 예: 애니메이션의 데이터 모델)의 `Signature`도 쓰지 않습니다. 엔진이 객체가 바뀌었다고 표시할 때마다 새 GUID를 주기 때문에, 다시 불러오면 같은 에셋이 다르게 내보내지기 때문입니다.
+
+`age_get_asset`에 `details: true`를 주면 써진 객체마다 Details 패널에 보이는 속성에 대해 `"$details": {"키": {"displayName": ..., "category": ...}}`가 붙습니다. 패널이 보여 주는 줄 이름과 섹션 제목입니다(예: `"InitialUpdateFunction": {"displayName": "On Initial Update", "category": "Functions"}`). Blueprint 변수에는 `displayName`이 붙습니다. 커맨드렛 내보내기에는 없습니다.
 
 ### `blueprint` (Blueprint, Animation Blueprint)
 

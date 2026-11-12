@@ -33,6 +33,7 @@ A full export and an incremental export produce the same result folder (`index.j
 | A BP's `classDefaults` | The parent class CDO. So only the values this BP changed in the Class Defaults panel appear. Variables this BP added always appear. |
 | Struct values (array elements, `FInstancedStruct` contents) | A newly made struct of the same type |
 | Parameter bags (`FInstancedPropertyBag`) | Not compared; always written in full (it is user data). |
+| Vectors, rotators, colors and other structs of at most four plain numbers | Compared as a whole: when any field differs, every field is written (`{"X":0,"Y":-1,"Z":0}`, not `{"Y":-1}`). |
 
 `-Full` turns this comparison off and writes everything.
 
@@ -68,6 +69,7 @@ Version 2: `blueprint.variables[].default` changed from a string to a JSON value
 | Soft references | Path string. The target is not loaded. |
 | Objects the asset owns (Instanced within the same package, or whose outer is the owner) | Written out as `{"$class", "$name", ...properties}`. The second time the same object appears, only its path is written. |
 | Ordinary structs | Object |
+| Structs of at most four plain numbers (FVector, FRotator, FLinearColor and so on) | Object with every field |
 | Structs with a text form (FGuid, FSoftObjectPath, FGameplayTag and so on) | String |
 | `FInstancedStruct` | `{"$type": struct path, ...fields}`. null if empty |
 | `FInstancedPropertyBag` | `{parameter name: value}` |
@@ -75,7 +77,9 @@ Version 2: `blueprint.variables[].default` changed from a string to a JSON value
 | Maps | Object. Keys in their text form |
 | Delegates and other types | The engine's text form |
 
-`Transient` and `Deprecated` properties are not written.
+`Transient` and `Deprecated` properties are not written. Neither is `Signature` of Sequencer objects (`UMovieSceneSignedObject`, e.g. an animation's data model): the engine gives it a new GUID whenever the object is marked as changed, so the same asset would export differently after a reload.
+
+With `age_get_asset` `details: true`, every written object also gets `"$details": {"Key": {"displayName": ..., "category": ...}}` for its properties shown in the Details panel: the row name and the section title the panel shows (e.g. `"InitialUpdateFunction": {"displayName": "On Initial Update", "category": "Functions"}`). Blueprint variables get `displayName`. Not in commandlet exports.
 
 ### `blueprint` (Blueprint, Animation Blueprint)
 

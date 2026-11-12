@@ -4,6 +4,7 @@
 #include "AGEExportContext.h"
 #include "EdGraph/EdGraph.h"
 #include "EdGraph/EdGraphNode.h"
+#include "ObjectEditorUtils.h"
 #include "StructUtils/InstancedStruct.h"
 #include "StructUtils/PropertyBag.h"
 #include "UObject/EnumProperty.h"
@@ -51,6 +52,59 @@ namespace
 	{
 		static const FName CoreUObjectPackage(TEXT("/Script/CoreUObject"));
 		return Struct.GetFName() == FName(Name) && Struct.GetPackage()->GetFName() == CoreUObjectPackage;
+	}
+
+	/**
+	 * Values that change without the content changing, so writing them would make the same asset export differently.
+	 * UMovieSceneSignedObject::Signature is a fresh GUID on every MarkAsChanged ("a GUID and not a hash", MovieSceneSignedObject.h);
+	 * animation data models and sequences reload with new ones. Matched by name to avoid a MovieScene module dependency.
+	 */
+	bool IsVolatileProperty(const FProperty& Property)
+	{
+		static const FName SignatureName(TEXT("Signature"));
+		static const FName SignedObjectName(TEXT("MovieSceneSignedObject"));
+		static const FName MovieScenePackage(TEXT("/Script/MovieScene"));
+		if (Property.GetFName() != SignatureName)
+		{
+			return false;
+		}
+		const UClass* Owner = Property.GetOwnerClass();
+		return Owner && Owner->GetFName() == SignedObjectName && Owner->GetPackage()->GetFName() == MovieScenePackage;
+	}
+
+	/**
+	 * Vectors, rotators, colors and other structs of at most four plain numbers. They are written whole when written at all:
+	 * {"Y":-1} for (0,-1,0) reads as "only Y is set".
+	 */
+	bool IsSmallNumericStruct(const UStruct& Struct)
+	{
+		int32 Count = 0;
+		for (TFieldIterator<FProperty> It(&Struct); It; ++It)
+		{
+			const FNumericProperty* Numeric = CastField<FNumericProperty>(*It);
+			if (!Numeric || Numeric->IsEnum() || GetStaticArrayDim(*Numeric) != 1 || ++Count > 4)
+			{
+				return false;
+			}
+		}
+		return Count > 0;
+	}
+
+	/** The section title the Details panel shows for the property ("SkeletalControl" -> "Skeletal Control"); sub-categories joined by '|'. */
+	FString DetailsCategory(const FProperty& Property)
+	{
+		const FName Category = FObjectEditorUtils::GetCategoryFName(&Property);
+		if (Category.IsNone())
+		{
+			return FString();
+		}
+		TArray<FString> Parts;
+		Category.ToString().ParseIntoArray(Parts, TEXT("|"), true);
+		for (FString& Part : Parts)
+		{
+			Part = FObjectEditorUtils::GetCategoryText(FName(*Part.TrimStartAndEnd())).ToString();
+		}
+		return FString::Join(Parts, TEXT("|"));
 	}
 
 	void AppendFields(FJsonObject& Target, const FJsonObject& Source)
@@ -108,11 +162,14 @@ TSharedRef<FJsonObject> FAGEPropertyWriter::WriteStructAgainstDefaults(const USc
 TSharedRef<FJsonObject> FAGEPropertyWriter::WriteFields(const UStruct& Struct, const void* Data, const void* Defaults, const UStruct* DefaultsStruct, const UObject* Owner, const FAGEPropertyFilter& Filter)
 {
 	TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
+	// The fields of a vector or color are not rows of their own in the Details panel.
+	const bool bWriteDetails = Context.bWriteDetails && !IsSmallNumericStruct(Struct);
+	TSharedRef<FJsonObject> Details = MakeShared<FJsonObject>();
 
 	for (TFieldIterator<FProperty> It(&Struct); It; ++It)
 	{
 		const FProperty& Property = **It;
-		if (Property.HasAnyPropertyFlags(CPF_Transient | CPF_Deprecated))
+		if (Property.HasAnyPropertyFlags(CPF_Transient | CPF_Deprecated) || IsVolatileProperty(Property))
 		{
 			continue;
 		}
@@ -135,26 +192,45 @@ TSharedRef<FJsonObject> FAGEPropertyWriter::WriteFields(const UStruct& Struct, c
 				continue;
 			}
 			Json->SetField(Key, WriteValue(Property, Value, Default, Owner));
-			continue;
 		}
-
-		// C-style fixed array (UPROPERTY() int32 Values[4]).
-		bool bAllIdentical = bHasDefault;
-		TArray<TSharedPtr<FJsonValue>> Items;
-		for (int32 Index = 0; Index < ArrayDim; ++Index)
+		else
 		{
-			const void* Value = Property.ContainerPtrToValuePtr<void>(Data, Index);
-			const void* Default = bHasDefault ? Property.ContainerPtrToValuePtr<void>(Defaults, Index) : nullptr;
-			if (!Default || !Property.Identical(Value, Default, ComparePortFlags))
+			// C-style fixed array (UPROPERTY() int32 Values[4]).
+			bool bAllIdentical = bHasDefault;
+			TArray<TSharedPtr<FJsonValue>> Items;
+			for (int32 Index = 0; Index < ArrayDim; ++Index)
 			{
-				bAllIdentical = false;
+				const void* Value = Property.ContainerPtrToValuePtr<void>(Data, Index);
+				const void* Default = bHasDefault ? Property.ContainerPtrToValuePtr<void>(Defaults, Index) : nullptr;
+				if (!Default || !Property.Identical(Value, Default, ComparePortFlags))
+				{
+					bAllIdentical = false;
+				}
+				Items.Add(WriteValue(Property, Value, Default, Owner));
 			}
-			Items.Add(WriteValue(Property, Value, Default, Owner));
-		}
-		if (!bAllIdentical)
-		{
+			if (bAllIdentical)
+			{
+				continue;
+			}
 			Json->SetArrayField(Key, Items);
 		}
+
+		if (bWriteDetails && Property.HasAnyPropertyFlags(CPF_Edit))
+		{
+			// The same functions the Details panel uses, so the text follows the editor's language settings like the panel does.
+			TSharedRef<FJsonObject> Detail = MakeShared<FJsonObject>();
+			Detail->SetStringField(TEXT("displayName"), Property.GetDisplayNameText().ToString());
+			const FString Category = DetailsCategory(Property);
+			if (!Category.IsEmpty())
+			{
+				Detail->SetStringField(TEXT("category"), Category);
+			}
+			Details->SetObjectField(Key, Detail);
+		}
+	}
+	if (Details->Values.Num() > 0)
+	{
+		Json->SetObjectField(TEXT("$details"), Details);
 	}
 	return Json;
 }
@@ -194,6 +270,10 @@ TSharedPtr<FJsonValue> FAGEPropertyWriter::WriteStructValue(const UScriptStruct&
 	if (Struct.StructFlags & STRUCT_ExportTextItemNative)
 	{
 		return MakeString(ExportAsText(Property, Value, Owner));
+	}
+	if (IsSmallNumericStruct(Struct))
+	{
+		return MakeShared<FJsonValueObject>(WriteStruct(Struct, Value, nullptr, Owner));
 	}
 
 	const void* StructDefaults = Default ? Default : (Context.bDiffOnly ? Context.GetStructDefaults(Struct) : nullptr);

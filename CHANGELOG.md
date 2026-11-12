@@ -10,6 +10,10 @@
 - `AGEActorBounds.h`: the same bounds for tools that other plugins add to the server.
 - Skeletons and skeletal meshes get a `bones` section: each bone's name and parent. A skeletal mesh also lists the bones of its skeleton that the mesh does not have (`skeletonBonesNotInMesh`).
 - `age_status` says whether an editing plugin is installed, and `age_guide` then describes its tools instead of saying that the tools only read.
+- Vectors, rotators, colors and other structs of at most four numbers are written whole when any field differs from the default: a look-at axis of (0, -1, 0) was written as `{"Y":-1}`, which reads as "only Y is set"; it is now `{"X":0,"Y":-1,"Z":0}`. Exports of most assets change once because of this (component locations, rotations, colors).
+- Animations (and other Sequencer data) export the same after being reloaded from disk: the `Signature` GUID the engine renews on every change mark is no longer written.
+- `age_get_asset` has `details: true`: each value also gets the name and section it has in the Details panel (`$details`, e.g. `InitialUpdateFunction` is "On Initial Update" under "Functions"), and Blueprint variables their display name. The default output is unchanged.
+- `age_animbp_overview` shows each AnimGraph node's changed settings after it, e.g. `Look At Bone: Head_M(Look at Location=@LookAtTarget) [LookAt_Axis.Axis=(0,-1,0), LookAtClamp=30, InterpolationType=Sinusoidal]`.
 
 ## 0.3.1 (beta) — 2026-11-03
 

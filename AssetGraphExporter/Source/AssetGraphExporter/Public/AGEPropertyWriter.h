@@ -23,6 +23,7 @@ using FAGEPropertyFilter = TFunction<bool(const FProperty&)>;
  *    as {"$class": ..., "$name": ..., ...properties};
  *  - everything else (other assets, classes, graphs, nodes) is written as a path string.
  * FInstancedStruct and FInstancedPropertyBag are opened, since plain reflection cannot see inside them.
+ * Structs of at most four plain numbers (vectors, rotators, colors) are written whole whenever they are written.
  */
 class ASSETGRAPHEXPORTER_API FAGEPropertyWriter
 {

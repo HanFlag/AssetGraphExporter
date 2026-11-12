@@ -10,6 +10,10 @@
 - `AGEActorBounds.h`: 다른 플러그인이 서버에 더한 도구도 같은 경계 상자를 쓰도록.
 - 스켈레톤과 스켈레탈 메시에 `bones` 칸이 생깁니다: 뼈마다 이름과 부모. 스켈레탈 메시는 그 스켈레톤에는 있지만 메시에는 없는 뼈도 보여 줍니다(`skeletonBonesNotInMesh`).
 - `age_status`가 고치기 플러그인이 설치됐는지 알려 주고, 설치돼 있으면 `age_guide`가 "읽기만 한다" 대신 그 도구를 안내합니다.
+- 벡터, 회전, 색처럼 숫자 4개 이하로 된 구조체는 한 칸이라도 기본값과 다르면 통째로 씁니다. 바라보기 축 (0, -1, 0)이 `{"Y":-1}`로 나와 "Y만 설정됨"처럼 읽혔는데, 이제 `{"X":0,"Y":-1,"Z":0}`입니다. 이 때문에 대부분 에셋의 내보내기 결과가 한 번 바뀝니다(컴포넌트 위치·회전·색).
+- 애니메이션(과 다른 시퀀서 데이터)을 디스크에서 다시 불러와도 같게 내보내집니다. 엔진이 바뀜 표시 때마다 새로 주는 `Signature` GUID를 더 이상 쓰지 않습니다.
+- `age_get_asset`에 `details: true`: 값마다 Details 패널의 이름과 섹션이 붙고(`$details`, 예: `InitialUpdateFunction`은 "Functions" 아래 "On Initial Update"), Blueprint 변수에는 표시 이름이 붙습니다. 기본 출력은 그대로입니다.
+- `age_animbp_overview`가 AnimGraph 노드마다 바꾼 설정을 뒤에 붙입니다. 예: `Look At Bone: Head_M(Look at Location=@LookAtTarget) [LookAt_Axis.Axis=(0,-1,0), LookAtClamp=30, InterpolationType=Sinusoidal]`.
 
 ## 0.3.1 (베타) — 2026-11-03
 

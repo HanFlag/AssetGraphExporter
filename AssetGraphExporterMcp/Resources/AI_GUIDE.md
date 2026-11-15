@@ -56,7 +56,9 @@ and do not ask them to type engine commands.
 | What does this asset use, what uses it | `age_references` |
 | Which Blueprint nodes use this C++ class / function / property (before renaming or removing it) | `age_find_usages` |
 | What changed between git revisions, or since the last commit | `age_diff` |
-| What is where in the open level: actors in a box or radius, their location, bounds and mesh (editor only) | `age_level_actors` |
+| What is where in the open level: actors in a box or radius, their location, bounds and mesh; property values and component attachment; `world: "pie"` for the running play session (editor only) | `age_level_actors` |
+| An animation's length, frames and bone tracks; bones' component-space positions over time and peak speed; two animations compared | `age_anim_overview` |
+| The last lines of the output log by category and regular expression, e.g. after a play session | `age_log` |
 | Where answers come from, versions | `age_status` |
 | Stop the background server (required before building C++) | `age_shutdown` |
 | Open the activity window when the user asks (it normally starts by itself) | `age_open_window` |

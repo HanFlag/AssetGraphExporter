@@ -106,7 +106,8 @@ namespace AGE
 			{ "age_shutdown", new[] { "서버 종료 요청", "Request server shutdown" } },
 			{ "age_open_window", new[] { "활동 창 열기", "Open the activity window" } },
 			{ "list_toolsets", new[] { "엔진 도구 목록 보기", "List engine tools" } },
-			{ "describe_toolset", new[] { "엔진 도구 설명 보기", "Describe engine tools" } },
+			{ "describe_toolsets", new[] { "엔진 툴셋 설명 보기", "Describe engine toolsets" } },
+			{ "describe_tools", new[] { "엔진 도구 설명 보기", "Describe engine tools" } },
 			{ "call_tool", new[] { "엔진 도구 실행", "Run engine tool" } },
 		};
 

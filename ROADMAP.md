@@ -58,7 +58,7 @@ Claude Code ──→ 127.0.0.1:8000/mcp  (one setting)
 ```
 
 - **Tool registration**: registered directly with the built-in MCP server through `IModelContextProtocolModule::AddTool`, not through `ToolsetRegistry`.
-  - Directly registered tools appear in `tools/list` right away (`ProcessListToolsJsonRpcCall` in `ModelContextProtocolServer.cpp`). Toolset tools have to go through `list_toolsets` → `describe_toolset` → `call_tool`.
+  - Directly registered tools appear in `tools/list` right away (`ProcessListToolsJsonRpcCall` in `ModelContextProtocolServer.cpp`). Toolset tools have to go through `list_toolsets` → `describe_toolsets` / `describe_tools` → `call_tool`.
   - We decide the result format. Through ToolsetRegistry, string results get wrapped once more inside `{"returnValue":"..."}` and every quote becomes `\"` (checked with the built-in `list_properties` result).
 - **Background mode**: a commandlet starts the built-in server and keeps waiting instead of exiting.
   - The engine allows this. There is a comment saying commandlets should start it directly with `-ModelContextProtocolStartServer` (`ModelContextProtocolSettings.cpp`). Editor commandlets also create `UEditorEngine` and go through PostEngineInit (`LaunchEngineLoop.cpp`).

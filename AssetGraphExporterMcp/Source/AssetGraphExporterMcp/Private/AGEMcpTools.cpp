@@ -8,6 +8,7 @@
 #include "AGEJsonDiff.h"
 #include "AGEJsonQuery.h"
 #include "AGEMcpActivity.h"
+#include "AGEMcpAnim.h"
 #include "AGEMcpLevel.h"
 #include "AGEMcpRevision.h"
 #include "AGEMcpState.h"
@@ -34,8 +35,11 @@
 #include "Misc/EngineVersion.h"
 #include "Misc/FileHelper.h"
 #include "Misc/PackageName.h"
+#include "Misc/OutputDeviceRedirector.h"
 #include "Misc/Parse.h"
 #include "Misc/Paths.h"
+#include "Modules/ModuleManager.h"
+#include "HAL/PlatformOutputDevices.h"
 #include "PackageTools.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
@@ -1138,6 +1142,112 @@ namespace AGE::McpToolsDetail
 		return TextResult(FString::Join(Lines, TEXT("\n")));
 	}
 
+	constexpr int32 DefaultLogLines = 50;
+	constexpr int32 MaxLogLines = 2000;
+	constexpr int32 MaxLogLineChars = 1000;
+
+	/** 'LogTemp' from '[2026.11.16-05.15.00:123][ 42]LogTemp: Warning: text' (or the same without the brackets); empty when the line has no category. */
+	FString LogCategory(const FString& Line)
+	{
+		int32 Start = 0;
+		for (int32 Prefix = 0; Prefix < 2 && Start < Line.Len() && Line[Start] == TEXT('['); ++Prefix)
+		{
+			const int32 Close = Line.Find(TEXT("]"), ESearchCase::CaseSensitive, ESearchDir::FromStart, Start);
+			if (Close == INDEX_NONE)
+			{
+				return FString();
+			}
+			Start = Close + 1;
+		}
+		int32 End = Start;
+		while (End < Line.Len() && (FChar::IsAlnum(Line[End]) || Line[End] == TEXT('_')))
+		{
+			++End;
+		}
+		return End > Start && End < Line.Len() && Line[End] == TEXT(':') ? Line.Mid(Start, End - Start) : FString();
+	}
+
+	FModelContextProtocolToolResult Log(const FJsonObject& Arguments)
+	{
+		FString CategoryText, Pattern;
+		Arguments.TryGetStringField(TEXT("category"), CategoryText);
+		Arguments.TryGetStringField(TEXT("regex"), Pattern);
+		Pattern.TrimStartAndEndInline();
+		TArray<FString> Categories;
+		CategoryText.ParseIntoArray(Categories, TEXT(","));
+		for (FString& Category : Categories)
+		{
+			Category.TrimStartAndEndInline();
+		}
+		Categories.RemoveAll([](const FString& Category) { return Category.IsEmpty(); });
+		const int32 MaxLines = FMath::Clamp(IntArgument(Arguments, TEXT("lines"), DefaultLogLines), 1, MaxLogLines);
+		TOptional<FRegexPattern> Regex;
+		if (!Pattern.IsEmpty())
+		{
+			Regex.Emplace(Pattern, ERegexPatternFlags::CaseInsensitive);
+			if (!Regex->IsValid())
+			{
+				return ErrorResult(FString::Printf(TEXT("'regex' is not a valid regular expression (ICU syntax): %s"), *Pattern));
+			}
+		}
+
+		// The file is still being written, so it is opened for shared writing after the pending lines are flushed.
+		GLog->Flush();
+		const FString File = FPlatformOutputDevices::GetAbsoluteLogFilename();
+		const TUniquePtr<FArchive> Reader(IFileManager::Get().CreateFileReader(*File, FILEREAD_AllowWrite));
+		if (!Reader)
+		{
+			return ErrorResult(FString::Printf(TEXT("Could not open the log file %s."), *File));
+		}
+		TArray<uint8> Bytes;
+		Bytes.SetNumUninitialized(Reader->TotalSize());
+		Reader->Serialize(Bytes.GetData(), Bytes.Num());
+		FString Text;
+		FFileHelper::BufferToString(Text, Bytes.GetData(), Bytes.Num());
+		TArray<FString> AllLines;
+		Text.ParseIntoArrayLines(AllLines, false);
+
+		// The first lines of a log have no [time][frame] prefix yet; after the first prefixed line,
+		// a line without it continues the entry above it (call stacks, multi-line messages).
+		TArray<int32> Matched;
+		FString Current;
+		bool bPrefixSeen = false;
+		for (int32 Index = 0; Index < AllLines.Num(); ++Index)
+		{
+			const FString& Line = AllLines[Index];
+			const bool bPrefixed = Line.StartsWith(TEXT("["));
+			bPrefixSeen |= bPrefixed;
+			if (bPrefixed || !bPrefixSeen)
+			{
+				Current = LogCategory(Line);
+			}
+			const bool bCategory = Categories.IsEmpty() || Categories.ContainsByPredicate([&Current](const FString& Category)
+			{
+				return Current.Equals(Category, ESearchCase::IgnoreCase) || Current.Equals(TEXT("Log") + Category, ESearchCase::IgnoreCase);
+			});
+			if (bCategory && (!Regex.IsSet() || FRegexMatcher(*Regex, Line).FindNext()))
+			{
+				Matched.Add(Index);
+			}
+		}
+
+		const int32 Shown = FMath::Min(Matched.Num(), MaxLines);
+		TArray<FString> Lines;
+		Lines.Add(FString::Printf(TEXT("log: %s%s, %d lines, %d matched%s"), *FPaths::GetCleanFilename(File),
+			AGE::Mcp::IsServeMode() ? TEXT(" (the background server's own log, not the editor's)") : TEXT(""), AllLines.Num(), Matched.Num(),
+			Shown < Matched.Num() ? *FString::Printf(TEXT(", last %d shown"), Shown) : TEXT("")));
+		for (int32 Index = Matched.Num() - Shown; Index < Matched.Num(); ++Index)
+		{
+			const FString& Line = AllLines[Matched[Index]];
+			Lines.Add(Line.Len() > MaxLogLineChars ? FString::Printf(TEXT("%s... (%d characters)"), *Line.Left(MaxLogLineChars), Line.Len()) : Line);
+		}
+		if (Matched.IsEmpty() && !Categories.IsEmpty())
+		{
+			Lines.Add(TEXT("No line matched. 'category' is the name before the first ':' of a line, e.g. LogTemp, LogBlueprintUserMessages (Print String), LogPlayLevel."));
+		}
+		return TextResult(FString::Join(Lines, TEXT("\n")));
+	}
+
 	FModelContextProtocolToolResult Status(const FJsonObject& Arguments)
 	{
 		TArray<FString> Lines;
@@ -1158,11 +1268,21 @@ namespace AGE::McpToolsDetail
 		}
 		Lines.Add(FString::Printf(TEXT("project: %s"), FApp::GetProjectName()));
 		Lines.Add(FString::Printf(TEXT("engine: %s"), *FEngineVersion::Current().ToString()));
-		Lines.Add(FString::Printf(TEXT("exporter: AssetGraphExporter %s (schema %d)"), AGE::ExporterVersion, AGE::SchemaVersion));
+		// Builds of the same version differ: the commit they were built from and when each module file was built tell them apart.
+		auto BuiltText = [](const TCHAR* ModuleName)
+		{
+			const FString File = FModuleManager::Get().GetModuleFilename(ModuleName);
+			const FDateTime Time = File.IsEmpty() ? FDateTime::MinValue() : IFileManager::Get().GetTimeStamp(*File);
+			return Time == FDateTime::MinValue() ? FString(TEXT("build time unknown"))
+				: FString::Printf(TEXT("built %s UTC"), *Time.ToString(TEXT("%Y-%m-%d %H:%M")));
+		};
+		Lines.Add(FString::Printf(TEXT("exporter: AssetGraphExporter %s (schema %d), from commit %s, %s; MCP tools %s"), AGE::ExporterVersion, AGE::SchemaVersion,
+			TEXT(AGE_BUILD_COMMIT), *BuiltText(TEXT("AssetGraphExporter")), *BuiltText(TEXT("AssetGraphExporterMcp"))));
 		// Without it, the name of the editing plugin is not mentioned.
 		const TSharedPtr<IPlugin> EditPlugin = IPluginManager::Get().FindEnabledPlugin(EditPluginName);
 		Lines.Add(EditPlugin.IsValid()
-			? FString::Printf(TEXT("editing: %s %s is installed; age_guide explains the editing tools and confirm/auto mode"), *EditPlugin->GetName(), *EditPlugin->GetDescriptor().VersionName)
+			? FString::Printf(TEXT("editing: %s %s (%s) is installed; age_guide explains the editing tools and confirm/auto mode"), *EditPlugin->GetName(), *EditPlugin->GetDescriptor().VersionName,
+				*BuiltText(*EditPlugin->GetName()))
 			: FString(TEXT("editing: no editing plugin installed; the age_* tools only read")));
 		return TextResult(FString::Join(Lines, TEXT("\n")));
 	}
@@ -1180,6 +1300,12 @@ namespace AGE::McpToolsDetail
 	FModelContextProtocolToolResult LevelActorsTool(const FJsonObject& Arguments)
 	{
 		const AGE::Mcp::FLevelActorsAnswer Answer = AGE::Mcp::LevelActors(Arguments);
+		return Answer.bError ? ErrorResult(Answer.Text) : TextResult(Answer.Text);
+	}
+
+	FModelContextProtocolToolResult AnimOverviewTool(const FJsonObject& Arguments)
+	{
+		const AGE::Mcp::FAnimOverviewAnswer Answer = AGE::Mcp::AnimOverview(Arguments);
 		return Answer.bError ? ErrorResult(Answer.Text) : TextResult(Answer.Text);
 	}
 
@@ -1344,8 +1470,15 @@ TArray<TSharedRef<IModelContextProtocolTool>> AGE::Mcp::CreateTools()
 			"'at' location, 'rot' (pitch, yaw, roll) and 'scale' when not 0 and 1, 'box' min-max (world-axis bounds, so a rotated mesh shows the space it really takes), "
 			"'mesh' static or skeletal mesh asset(s), 'hidden' when hidden in the editor. "
 			"World Partition actors in unloaded regions are listed as 'unloaded' with their saved bounds only; nothing is loaded. "
-			"Outliner rules decide which actors are listed (no WorldSettings or builder brush)."),
+			"Outliner rules decide which actors are listed (no WorldSettings or builder brush). "
+			"world=pie reads the running Play-In-Editor world instead (spawned actors included, 'hidden' as in the game). "
+			"With 'properties' and 'components' each actor line is followed by indented lines: the asked values, then one line per asked component "
+			"with its class, attach parent (Actor.Component when another actor owns it), socket, world location/rotation/scale, 'physics' when simulating and 'hidden' when the game does not draw it."),
 		FSchema()
+			.Add(TEXT("world"), TEXT("string"), TEXT("editor (default): the level open in the editor; pie: the running play session."))
+			.Add(TEXT("properties"), TEXT("array"), TEXT("Property names to read on each listed actor, as written in C++ or the Blueprint (bAIvsAI, Health); Python names (ai_vs_ai) work too. "
+				"'.' reads a member of a struct, component or object, e.g. Stats.MaxHealth or WeaponMesh.bHiddenInGame. Values as the Details panel copies them. Optional."))
+			.Add(TEXT("components"), TEXT("array"), TEXT("Components to show on each listed actor: object names (CharacterMesh0), the C++ or Blueprint member that holds them (Mesh), classes (StaticMeshComponent), or * for every scene component. Optional."))
 			.Add(TEXT("min"), TEXT("array"), TEXT("Box range: lowest corner [x, y, z]. Use with max."))
 			.Add(TEXT("max"), TEXT("array"), TEXT("Box range: highest corner [x, y, z]. Use with min."))
 			.Add(TEXT("center"), TEXT("array"), TEXT("Sphere range: center [x, y, z]. Use with radius."))
@@ -1358,6 +1491,30 @@ TArray<TSharedRef<IModelContextProtocolTool>> AGE::Mcp::CreateTools()
 			.Add(TEXT("limit"), TEXT("integer"), TEXT("Maximum lines, default 100, at most 1000."))
 			.Build(),
 		&LevelActorsTool));
+
+	Tools.Add(MakeShared<FTool>(TEXT("age_anim_overview"),
+		TEXT("An animation's length, frames, frame rate, skeleton and which bones have tracks; with 'bones', each bone's component-space position (cm) every 'step' seconds "
+			"and its peak speed (cm/s) with the time and frames, as the engine evaluates the pose (raw data, root motion kept in the pose, additive animations as a full pose). "
+			"'compare' adds a second animation (e.g. a retargeted copy): both summaries, the tracks only one has, both positions per row and how far apart they are, and both peak speeds; "
+			"when the lengths differ the second is read at the same fraction of its length. Given a folder instead, one line per AnimSequence under it (with 'bones': their peak speeds)."),
+		FSchema()
+			.Add(TEXT("asset"), TEXT("string"), TEXT("An animation sequence, montage or composite, e.g. /Game/Anims/Attack; or a folder such as /Game/Anims."), true)
+			.Add(TEXT("bones"), TEXT("array"), TEXT("Bone names, e.g. [\"hand_l\", \"foot_r\"]. Optional."))
+			.Add(TEXT("step"), TEXT("number"), TEXT("Seconds between rows of positions. Default: the length / 10."))
+			.Add(TEXT("compare"), TEXT("string"), TEXT("A second animation to compare with. Optional."))
+			.Build(),
+		&AnimOverviewTool));
+
+	Tools.Add(MakeShared<FTool>(TEXT("age_log"),
+		TEXT("The last lines of this editor's output log, filtered by category and regular expression, e.g. what a play session printed. "
+			"Lines are read from the log file as written so far, oldest first; a line without the [time][frame] prefix (call stack, multi-line message) "
+			"belongs to the entry above it and is kept with its category. In the background server it reads the server's own log."),
+		FSchema()
+			.Add(TEXT("category"), TEXT("string"), TEXT("Comma-separated log categories, e.g. LogTemp, LogBlueprintUserMessages (Print String), LogAI; the 'Log' prefix is optional. Optional."))
+			.Add(TEXT("regex"), TEXT("string"), TEXT("Regular expression (ICU), case-insensitive, matched against the whole line, e.g. 'Error|Warning' or 'Spawn.*failed'. Optional."))
+			.Add(TEXT("lines"), TEXT("integer"), TEXT("How many of the last matching lines, default 50, at most 2000."))
+			.Build(),
+		&Log));
 
 	Tools.Add(MakeShared<FTool>(TEXT("age_status"),
 		TEXT("Where the age_* answers come from (the running editor, including unsaved changes, or the background server reading saved files), plus project, engine and exporter versions."),

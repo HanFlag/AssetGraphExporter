@@ -5,11 +5,13 @@
 #include "AGEMcpState.h"
 #include "ActorEditorUtils.h"
 #include "Components/PrimitiveComponent.h"
+#include "Components/SceneComponent.h"
 #include "Components/SkinnedMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
 #include "Editor.h"
+#include "Engine/Engine.h"
 #include "Engine/SkinnedAsset.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
@@ -17,6 +19,7 @@
 #include "GameFramework/Actor.h"
 #include "Math/Box.h"
 #include "UObject/Package.h"
+#include "UObject/UnrealType.h"
 #include "WorldPartition/WorldPartition.h"
 #include "WorldPartition/WorldPartitionActorDescInstance.h"
 #include "WorldPartition/WorldPartitionHelpers.h"
@@ -297,6 +300,255 @@ namespace AGE::McpLevelDetail
 		OutError = FString::Printf(TEXT("'around': '%s' matches %d actors: %s. Use the object name."), *Query, Matches.Num(), *FString::Join(Names, TEXT(", ")));
 		return nullptr;
 	}
+
+	constexpr int32 MaxValueChars = 500;
+
+	/** A JSON array of strings or one comma-separated string. */
+	bool ReadNameList(const FJsonObject& Arguments, const TCHAR* Key, TArray<FString>& OutNames, FString& OutError)
+	{
+		const TSharedPtr<FJsonValue> Value = Arguments.TryGetField(Key);
+		if (!Value.IsValid() || Value->Type == EJson::Null)
+		{
+			return true;
+		}
+		TArray<FString> Items;
+		if (Value->Type == EJson::String)
+		{
+			Value->AsString().ParseIntoArray(Items, TEXT(","));
+		}
+		else if (Value->Type == EJson::Array)
+		{
+			for (const TSharedPtr<FJsonValue>& Item : Value->AsArray())
+			{
+				if (Item->Type != EJson::String)
+				{
+					OutError = FString::Printf(TEXT("'%s' must be an array of strings."), Key);
+					return false;
+				}
+				Items.Add(Item->AsString());
+			}
+		}
+		else
+		{
+			OutError = FString::Printf(TEXT("'%s' must be an array of strings."), Key);
+			return false;
+		}
+		for (FString& Item : Items)
+		{
+			Item.TrimStartAndEndInline();
+			if (!Item.IsEmpty())
+			{
+				OutNames.Add(Item);
+			}
+		}
+		return true;
+	}
+
+	/** Lowercase without '_': AIvsAI and ai_vs_ai give the same key. */
+	FString LooseKey(const FString& Name)
+	{
+		return Name.Replace(TEXT("_"), TEXT("")).ToLower();
+	}
+
+	/** By C++ or Blueprint name, then ignoring case, '_' and a bool's leading 'b', so Python names (ai_vs_ai for bAIvsAI) work too. */
+	const FProperty* FindPropertyLoose(const UStruct& Struct, const FString& Name)
+	{
+		if (const FProperty* Exact = FindFProperty<FProperty>(&Struct, *Name))
+		{
+			return Exact;
+		}
+		const FString Key = LooseKey(Name);
+		for (TFieldIterator<FProperty> It(&Struct); It; ++It)
+		{
+			const FString PropertyName = It->GetName();
+			if (LooseKey(PropertyName) == Key)
+			{
+				return *It;
+			}
+			if (It->IsA<FBoolProperty>() && PropertyName.Len() > 1 && PropertyName[0] == TEXT('b') && LooseKey(PropertyName.Mid(1)) == Key)
+			{
+				return *It;
+			}
+		}
+		return nullptr;
+	}
+
+	FString SimilarPropertyText(const UStruct& Struct, const FString& Name)
+	{
+		const FString Key = LooseKey(Name);
+		TArray<FString> Similar;
+		for (TFieldIterator<FProperty> It(&Struct); It; ++It)
+		{
+			if (LooseKey(It->GetName()).Contains(Key))
+			{
+				Similar.Add(It->GetName());
+			}
+		}
+		Similar.Sort();
+		const int32 Extra = Similar.Num() - MaxSimilarShown;
+		Similar.SetNum(FMath::Min(Similar.Num(), MaxSimilarShown));
+		return Similar.IsEmpty() ? FString() : FString::Printf(TEXT(" (similar: %s%s)"), *FString::Join(Similar, TEXT(", ")),
+			Extra > 0 ? *FString::Printf(TEXT(" and %d more"), Extra) : TEXT(""));
+	}
+
+	/** 'Name = value' for a property path: 'Count', 'Stats.MaxHealth' (struct member), 'WeaponMesh.bHiddenInGame' (object or component member). */
+	FString PropertyText(UObject& Root, const FString& Path)
+	{
+		TArray<FString> Parts;
+		Path.ParseIntoArray(Parts, TEXT("."));
+		UObject* Owner = &Root;
+		const UStruct* Struct = Root.GetClass();
+		const void* Container = &Root;
+		for (int32 Index = 0; Index < Parts.Num(); ++Index)
+		{
+			const bool bLast = Index == Parts.Num() - 1;
+			const FProperty* Property = FindPropertyLoose(*Struct, Parts[Index]);
+			if (!Property)
+			{
+				// Components added at runtime or by C++ without a member: found by object name.
+				const AActor* Actor = Container == Owner ? Cast<AActor>(Owner) : nullptr;
+				UActorComponent* Component = nullptr;
+				if (Actor && !bLast)
+				{
+					Actor->ForEachComponent(false, [&](UActorComponent* Candidate)
+					{
+						if (!Component && Candidate->GetName().Equals(Parts[Index], ESearchCase::IgnoreCase))
+						{
+							Component = Candidate;
+						}
+					});
+				}
+				if (!Component)
+				{
+					return FString::Printf(TEXT("%s: no such property on %s%s"), *Path, *Struct->GetName(), *SimilarPropertyText(*Struct, Parts[Index]));
+				}
+				Owner = Component;
+				Struct = Component->GetClass();
+				Container = Component;
+				continue;
+			}
+			const void* Value = Property->ContainerPtrToValuePtr<void>(Container);
+			if (bLast)
+			{
+				FString Text;
+				Property->ExportText_Direct(Text, Value, nullptr, Owner, PPF_None);
+				if (Text.Len() > MaxValueChars)
+				{
+					Text = FString::Printf(TEXT("%s... (%d characters)"), *Text.Left(MaxValueChars), Text.Len());
+				}
+				return FString::Printf(TEXT("%s = %s"), *Path, *Text);
+			}
+			if (const FStructProperty* StructProperty = CastField<FStructProperty>(Property))
+			{
+				Struct = StructProperty->Struct;
+				Container = Value;
+			}
+			else if (const FObjectPropertyBase* ObjectProperty = CastField<FObjectPropertyBase>(Property))
+			{
+				UObject* Next = ObjectProperty->GetObjectPropertyValue(Value);
+				if (!Next)
+				{
+					return FString::Printf(TEXT("%s: %s is None"), *Path, *FString::Join(MakeArrayView(Parts).Left(Index + 1), TEXT(".")));
+				}
+				Owner = Next;
+				Struct = Next->GetClass();
+				Container = Next;
+			}
+			else
+			{
+				return FString::Printf(TEXT("%s: %s is a %s, not a struct or object"), *Path, *Property->GetName(), *Property->GetCPPType());
+			}
+		}
+		return FString::Printf(TEXT("%s: empty name"), *Path);
+	}
+
+	/** By object name, by the C++ or Blueprint member that holds it (Mesh for a Character's CharacterMesh0), or by class. */
+	bool ComponentMatches(const UActorComponent& Component, const FString& MemberName, const TArray<FString>& Filters)
+	{
+		for (const FString& Filter : Filters)
+		{
+			if (Filter == TEXT("*") ? Component.IsA<USceneComponent>()
+				: Component.GetName().Equals(Filter, ESearchCase::IgnoreCase) || MemberName.Equals(Filter, ESearchCase::IgnoreCase) || ClassMatches(Component.GetClass(), { Filter }))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** Name, class, attach parent and socket, world transform; 'physics' when simulating, 'hidden' when the game does not draw it. */
+	FString ComponentText(const UActorComponent& Component, const FString& MemberName, const AActor& Owner)
+	{
+		FString Text = FString::Printf(TEXT("%s%s %s"), *Component.GetName(),
+			MemberName.IsEmpty() || MemberName == Component.GetName() ? TEXT("") : *FString::Printf(TEXT(" (member %s)"), *MemberName), *Component.GetClass()->GetName());
+		const USceneComponent* Scene = Cast<USceneComponent>(&Component);
+		if (!Scene)
+		{
+			return Text + TEXT(" (not a scene component)");
+		}
+		if (const USceneComponent* Parent = Scene->GetAttachParent())
+		{
+			const AActor* ParentOwner = Parent->GetOwner();
+			Text += TEXT(" parent ") + (ParentOwner && ParentOwner != &Owner ? LabelOf(*ParentOwner) + TEXT(".") : FString()) + Parent->GetName();
+			if (Scene->GetAttachSocketName() != NAME_None)
+			{
+				Text += TEXT(" socket ") + Scene->GetAttachSocketName().ToString();
+			}
+		}
+		Text += TEXT(" at ") + VectorText(Scene->GetComponentLocation()) + RotationText(Scene->GetComponentRotation()) + ScaleText(Scene->GetComponentScale());
+		const UPrimitiveComponent* Primitive = Cast<UPrimitiveComponent>(Scene);
+		if (Primitive && Primitive->IsSimulatingPhysics())
+		{
+			Text += TEXT(" physics");
+		}
+		if (!Scene->IsVisible() || Scene->bHiddenInGame)
+		{
+			Text += TEXT(" hidden");
+		}
+		return Text;
+	}
+
+	/** Indented lines under an actor: the asked properties on one line, then the asked components. */
+	void AddDetailLines(AActor& Actor, const TArray<FString>& Properties, const TArray<FString>& ComponentFilters, FString& Line)
+	{
+		if (!Properties.IsEmpty())
+		{
+			TArray<FString> Values;
+			for (const FString& Path : Properties)
+			{
+				Values.Add(PropertyText(Actor, Path));
+			}
+			Line += TEXT("\n  ") + FString::Join(Values, TEXT("; "));
+		}
+		if (!ComponentFilters.IsEmpty())
+		{
+			TMap<const UActorComponent*, FString> MemberNames;
+			for (TFieldIterator<FObjectPropertyBase> It(Actor.GetClass()); It; ++It)
+			{
+				if (const UActorComponent* Held = Cast<UActorComponent>(It->GetObjectPropertyValue_InContainer(&Actor)))
+				{
+					MemberNames.FindOrAdd(Held, It->GetName());
+				}
+			}
+			TArray<UActorComponent*> Components;
+			Actor.ForEachComponent(false, [&](UActorComponent* Component)
+			{
+				if (ComponentMatches(*Component, MemberNames.FindRef(Component), ComponentFilters))
+				{
+					Components.Add(Component);
+				}
+			});
+			Components.Sort([](const UActorComponent& A, const UActorComponent& B) { return A.GetName() < B.GetName(); });
+			for (const UActorComponent* Component : Components)
+			{
+				Line += TEXT("\n  ") + ComponentText(*Component, MemberNames.FindRef(Component), Actor);
+			}
+			if (Components.IsEmpty())
+			{
+				Line += TEXT("\n  no component matched 'components'");
+			}
+		}
+	}
 }
 
 FString AGE::Mcp::BoxText(const FBox& Box)
@@ -315,10 +567,17 @@ AGE::Mcp::FLevelActorsAnswer AGE::Mcp::LevelActors(const FJsonObject& Arguments)
 		return Error(TEXT("age_level_actors reads the level open in the editor, and this is the background server, which reads saved files only. "
 			"Ask the user to open the project in the Unreal editor, then call it again."));
 	}
-	UWorld* World = GEditor->GetEditorWorldContext().World();
+	const FString WorldName = StringArgument(Arguments, TEXT("world"));
+	const bool bPie = WorldName.Equals(TEXT("pie"), ESearchCase::IgnoreCase);
+	if (!bPie && !WorldName.IsEmpty() && !WorldName.Equals(TEXT("editor"), ESearchCase::IgnoreCase))
+	{
+		return Error(FString::Printf(TEXT("'world' is editor or pie, not '%s'."), *WorldName));
+	}
+	UWorld* World = bPie ? GEditor->PlayWorld.Get() : GEditor->GetEditorWorldContext().World();
 	if (!World)
 	{
-		return Error(TEXT("The editor has no level open."));
+		return Error(bPie ? TEXT("No play session is running. Start Play in the editor, then call again, or leave 'world' out for the editor's level.")
+			: TEXT("The editor has no level open."));
 	}
 
 	FString ArgumentError;
@@ -327,6 +586,11 @@ AGE::Mcp::FLevelActorsAnswer AGE::Mcp::LevelActors(const FJsonObject& Arguments)
 	if (!ReadVector(Arguments, TEXT("min"), Min, ArgumentError) || !ReadVector(Arguments, TEXT("max"), Max, ArgumentError)
 		|| !ReadVector(Arguments, TEXT("center"), Center, ArgumentError)
 		|| !ReadNumber(Arguments, TEXT("radius"), Radius, ArgumentError) || !ReadNumber(Arguments, TEXT("limit"), LimitNumber, ArgumentError))
+	{
+		return Error(ArgumentError);
+	}
+	TArray<FString> Properties, ComponentFilters;
+	if (!ReadNameList(Arguments, TEXT("properties"), Properties, ArgumentError) || !ReadNameList(Arguments, TEXT("components"), ComponentFilters, ArgumentError))
 	{
 		return Error(ArgumentError);
 	}
@@ -423,13 +687,14 @@ AGE::Mcp::FLevelActorsAnswer AGE::Mcp::LevelActors(const FJsonObject& Arguments)
 
 	const UPackage* MapPackage = World->GetPackage();
 	// In World Partition each actor has its own package, so the map's mark alone misses unsaved actor changes.
-	bool bUnsaved = MapPackage->IsDirty();
+	bool bUnsaved = !bPie && MapPackage->IsDirty();
 	TArray<FEntry> Entries;
 	for (TActorIterator<AActor> It(World); It; ++It)
 	{
-		const AActor& Actor = **It;
+		AActor& Actor = **It;
 		// What the Outliner lists (FActorMode::IsActorDisplayable), without its view options.
-		if (!FActorEditorUtils::IsActorDisplayable(&Actor) || Actor.HasAnyFlags(RF_Transient))
+		// Game code may spawn transient actors, so they count in a play session.
+		if (!FActorEditorUtils::IsActorDisplayable(&Actor) || (!bPie && Actor.HasAnyFlags(RF_Transient)))
 		{
 			continue;
 		}
@@ -449,19 +714,22 @@ AGE::Mcp::FLevelActorsAnswer AGE::Mcp::LevelActors(const FJsonObject& Arguments)
 			continue;
 		}
 
-		bUnsaved |= Actor.GetPackage()->IsDirty();
+		bUnsaved |= !bPie && Actor.GetPackage()->IsDirty();
 		FEntry& Entry = Entries.AddDefaulted_GetRef();
 		Entry.Name = Actor.GetName();
 		Entry.Path = Actor.GetPathName();
 		Entry.Distance = Range.Kind == FRange::EKind::Level ? 0.0 : FVector::Dist(Range.Center, Location);
 		Entry.Line = FString::Printf(TEXT("%s %s at %s%s%s box %s%s%s"), *NameText(Label, Entry.Name), *Actor.GetClass()->GetName(),
 			*VectorText(Location), *RotationText(Actor.GetActorRotation()), *ScaleText(Actor.GetActorScale3D()), *BoxText(Box), *MeshText(Actor),
-			Actor.IsHiddenEd() ? TEXT(" hidden") : TEXT(""));
+			(bPie ? Actor.IsHidden() : Actor.IsHiddenEd()) ? TEXT(" hidden") : TEXT(""));
+		AddDetailLines(Actor, Properties, ComponentFilters, Entry.Line);
 	}
 
 	// World Partition: actors in unloaded regions are known from their saved descriptions; nothing is loaded.
 	int32 UnloadedCount = 0;
-	if (UWorldPartition* WorldPartition = World->GetWorldPartition())
+	// In a play session streaming decides what is loaded, so unloaded descriptions are left out.
+	UWorldPartition* WorldPartition = bPie ? nullptr : World->GetWorldPartition();
+	if (WorldPartition)
 	{
 		auto AddUnloaded = [&](const FWorldPartitionActorDescInstance* Desc)
 		{
@@ -519,9 +787,21 @@ AGE::Mcp::FLevelActorsAnswer AGE::Mcp::LevelActors(const FJsonObject& Arguments)
 
 	TArray<FString> Notes;
 	Notes.Add(FString::Printf(TEXT("World Partition: %s"), World->IsPartitionedWorld() ? TEXT("yes") : TEXT("no")));
-	if (GEditor->IsPlaySessionInProgress())
+	if (bPie)
 	{
-		Notes.Add(TEXT("a play session is running; this is the editor's level, not the game's"));
+		int32 PlayWorlds = 0;
+		for (const FWorldContext& Context : GEditor->GetWorldContexts())
+		{
+			PlayWorlds += Context.WorldType == EWorldType::PIE ? 1 : 0;
+		}
+		if (PlayWorlds > 1)
+		{
+			Notes.Add(FString::Printf(TEXT("%d play worlds; this is the first"), PlayWorlds));
+		}
+	}
+	else if (GEditor->IsPlaySessionInProgress())
+	{
+		Notes.Add(TEXT("a play session is running; this is the editor's level, not the game's (world: pie reads the game's)"));
 	}
 	FString Filters;
 	if (!ClassFilters.IsEmpty())
@@ -534,7 +814,8 @@ AGE::Mcp::FLevelActorsAnswer AGE::Mcp::LevelActors(const FJsonObject& Arguments)
 	}
 
 	TArray<FString> Lines;
-	Lines.Add(bUnsaved ? TEXT("source: editor (has unsaved changes)") : TEXT("source: editor"));
+	Lines.Add(bPie ? FString::Printf(TEXT("source: play session (PIE), game time %.1f s%s"), World->GetTimeSeconds(), World->IsPaused() ? TEXT(", paused") : TEXT(""))
+		: bUnsaved ? FString(TEXT("source: editor (has unsaved changes)")) : FString(TEXT("source: editor")));
 	Lines.Add(FString::Printf(TEXT("%s (%s), %s, bounds %s%s: %d actor(s)%s%s, %s"), *MapPackage->GetName(), *FString::Join(Notes, TEXT("; ")), *RangeText, ModeName, *Filters,
 		Entries.Num(), UnloadedCount > 0 ? *FString::Printf(TEXT(" (%d unloaded)"), UnloadedCount) : TEXT(""),
 		Entries.Num() > Limit ? *FString::Printf(TEXT(", first %d shown"), Limit) : TEXT(""),

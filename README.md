@@ -2,7 +2,7 @@
 
 # AssetGraphExporter
 
-A UE 5.8 editor plugin that lets Claude read and analyze Unreal assets better than the engine's built-in Unreal MCP does. It works in any project.
+A UE 5.9 editor plugin that lets Claude read and analyze Unreal assets better than the engine's built-in Unreal MCP does. It works in any project.
 
 This version (0.3.1) reads and analyzes assets, **even with the editor closed**.
 
@@ -51,14 +51,16 @@ Compared with the built-in Unreal MCP on the same assets (details in [ROADMAP.md
 | `age_find_usages` | BP nodes that use a C++ class, function or variable |
 | `age_diff` | Differences between an older git revision and now |
 | `age_find_assets` · `age_get_asset` | Find assets, pull out part of the structure JSON |
-| `age_level_actors` | What is where in the open level: the actors in a box or radius with location, rotation, scale, bounds and mesh (editor only) |
+| `age_level_actors` | What is where in the open level: the actors in a box or radius with location, rotation, scale, bounds and mesh, values and component attachment; also the running play session (editor only) |
+| `age_anim_overview` | An animation's length, frames and bone tracks; chosen bones' positions over time and peak speed; compare two animations |
+| `age_log` | The last lines of the output log, by category and regular expression |
 | `age_status` · `age_shutdown` | Check status (including whether an editing plugin is installed), stop the background server |
 | `age_open_window` | Open the window that shows what the AI is doing |
 | `age_guide` · `age_feedback` | The guide the AI reads first; report a problem (opens a pre-filled GitHub issue page, you press Submit) |
 
 ## Requirements
 
-- Unreal Engine 5.8, Win64 (checked on 5.8.4). The release zip contains a build for 5.8.4 Win64. For other engine versions, add it to a C++ project and build from source.
+- Unreal Engine 5.9, Win64 (checked on 5.9.0). The latest release zip (0.3.1) contains a build for 5.8.4 Win64; the 5.8 source is the `ue5.8` tag. For other engine versions, add it to a C++ project and build from source.
 - MCP tools: the Unreal MCP plugin that ships with the engine (`ModelContextProtocol`, Experimental).
 - Optional: the StateTree and Niagara plugins (without them, only that handler is missing). `age_diff` needs git.
 - Not done yet: analyzing level contents. Other limits are in [Known limitations](Documentation/Guide.md#known-limitations).

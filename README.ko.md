@@ -2,7 +2,7 @@
 
 # AssetGraphExporter
 
-Claude와 함께 Unreal을 쓸 때, Claude가 엔진 내장 Unreal MCP보다 나은 방식으로 에셋을 읽고 분석하게 하는 UE 5.8 에디터 플러그인입니다. 어느 프로젝트에나 넣어 씁니다.
+Claude와 함께 Unreal을 쓸 때, Claude가 엔진 내장 Unreal MCP보다 나은 방식으로 에셋을 읽고 분석하게 하는 UE 5.9 에디터 플러그인입니다. 어느 프로젝트에나 넣어 씁니다.
 
 지금 버전(0.3.1)에는 에셋을 **에디터를 끈 상태에서도** 읽고 분석하는 기능이 들어 있습니다.
 
@@ -51,14 +51,16 @@ Claude와 함께 Unreal을 쓸 때, Claude가 엔진 내장 Unreal MCP보다 나
 | `age_find_usages` | C++ 클래스·함수·변수를 쓰는 BP 노드 |
 | `age_diff` | git 예전 버전과 지금의 차이 |
 | `age_find_assets` · `age_get_asset` | 에셋 찾기, 구조 JSON 일부 꺼내기 |
-| `age_level_actors` | 열린 레벨에 무엇이 어디에 있나: 상자나 반경 안 액터의 위치·회전·크기·경계 상자·메시 (에디터에서만) |
+| `age_level_actors` | 열린 레벨에 무엇이 어디에 있나: 상자나 반경 안 액터의 위치·회전·크기·경계 상자·메시, 속성 값과 컴포넌트 붙은 곳. 플레이 중 월드도 (에디터에서만) |
+| `age_anim_overview` | 애니메이션 길이·프레임·트랙 있는 뼈, 고른 뼈의 시간별 위치와 최고 속도, 두 애니 비교 |
+| `age_log` | 출력 로그의 마지막 줄을 카테고리와 정규식으로 |
 | `age_status` · `age_shutdown` | 상태 확인(고치기 플러그인이 설치됐는지도), 상주 서버 끄기 |
 | `age_open_window` | AI가 하는 일을 보여 주는 창 열기 |
 | `age_guide` · `age_feedback` | AI가 처음 읽는 사용 안내, 문제 보고(내용이 채워진 GitHub 이슈 화면을 열어 사용자가 Submit) |
 
 ## 요구 사항
 
-- Unreal Engine 5.8, Win64 (5.8.4에서 확인). 릴리즈 zip에는 5.8.4 Win64용 빌드가 들어 있습니다. 다른 엔진 버전에서는 C++ 프로젝트에 넣어 소스로 빌드해야 합니다.
+- Unreal Engine 5.9, Win64 (5.9.0에서 확인). 최신 릴리즈 zip(0.3.1)에는 5.8.4 Win64용 빌드가 들어 있고, 5.8용 소스는 `ue5.8` 태그입니다. 다른 엔진 버전에서는 C++ 프로젝트에 넣어 소스로 빌드해야 합니다.
 - MCP 도구: 엔진에 들어 있는 Unreal MCP 플러그인(`ModelContextProtocol`, Experimental).
 - 선택: StateTree, Niagara 플러그인(없으면 그 처리기만 빠짐). `age_diff`는 git이 필요합니다.
 - 아직 하지 않는 것: 레벨 내용 분석. 그 밖의 한계는 [알려진 한계](Documentation/Guide.ko.md#알려진-한계).

@@ -58,7 +58,7 @@ Claude Code ──→ 127.0.0.1:8000/mcp  (설정은 하나)
 ```
 
 - **도구 등록**: `IModelContextProtocolModule::AddTool`로 내장 MCP 서버에 직접 등록합니다. `ToolsetRegistry`를 거치지 않습니다.
-  - 직접 등록한 도구는 `tools/list`에 바로 나옵니다(`ModelContextProtocolServer.cpp`의 `ProcessListToolsJsonRpcCall`). 툴셋 도구는 `list_toolsets` → `describe_toolset` → `call_tool`을 거쳐야 합니다.
+  - 직접 등록한 도구는 `tools/list`에 바로 나옵니다(`ModelContextProtocolServer.cpp`의 `ProcessListToolsJsonRpcCall`). 툴셋 도구는 `list_toolsets` → `describe_toolsets` / `describe_tools` → `call_tool`을 거쳐야 합니다.
   - 결과 형식을 우리가 정합니다. ToolsetRegistry를 거치면 문자열 결과가 `{"returnValue":"..."}` 안에 한 번 더 감싸져 따옴표가 전부 `\"`가 됩니다(내장 `list_properties` 결과로 확인).
 - **상주 모드**: 커맨드렛이 내장 서버를 띄우고 끄지 않고 기다립니다.
   - 엔진이 이 방식을 허용합니다. 커맨드렛에서는 `-ModelContextProtocolStartServer`로 직접 켜라는 주석이 있습니다(`ModelContextProtocolSettings.cpp`). 에디터 커맨드렛도 `UEditorEngine`을 만들고 PostEngineInit까지 거칩니다(`LaunchEngineLoop.cpp`).

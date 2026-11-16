@@ -1496,7 +1496,8 @@ TArray<TSharedRef<IModelContextProtocolTool>> AGE::Mcp::CreateTools()
 		TEXT("An animation's length, frames, frame rate, skeleton and which bones have tracks; with 'bones', each bone's component-space position (cm) every 'step' seconds "
 			"and its peak speed (cm/s) with the time and frames, as the engine evaluates the pose (raw data, root motion kept in the pose, additive animations as a full pose). "
 			"'compare' adds a second animation (e.g. a retargeted copy): both summaries, the tracks only one has, both positions per row and how far apart they are, and both peak speeds; "
-			"when the lengths differ the second is read at the same fraction of its length. Given a folder instead, one line per AnimSequence under it (with 'bones': their peak speeds)."),
+			"when the lengths differ the second is read at the same fraction of its length. A montage gives its sections and the animations its slots play, with their time ranges; it has no pose of its own, so 'bones' and 'compare' take one of those animations. "
+			"Given a folder instead, one line per AnimSequence under it (with 'bones': their peak speeds)."),
 		FSchema()
 			.Add(TEXT("asset"), TEXT("string"), TEXT("An animation sequence, montage or composite, e.g. /Game/Anims/Attack; or a folder such as /Game/Anims."), true)
 			.Add(TEXT("bones"), TEXT("array"), TEXT("Bone names, e.g. [\"hand_l\", \"foot_r\"]. Optional."))

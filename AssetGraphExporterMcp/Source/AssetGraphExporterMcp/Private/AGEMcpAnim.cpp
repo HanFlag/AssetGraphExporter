@@ -2,7 +2,9 @@
 
 #include "AGEMcpAnim.h"
 #include "AnimPose.h"
+#include "Animation/AnimCompositeBase.h"
 #include "Animation/AnimData/IAnimationDataModel.h"
+#include "Animation/AnimMontage.h"
 #include "Animation/AnimSequence.h"
 #include "Animation/AnimSequenceBase.h"
 #include "Animation/Skeleton.h"
@@ -95,6 +97,41 @@ namespace AGE::McpAnimDetail
 			*Seconds(Info.Length), Info.Frames, *Seconds(Info.Rate.AsDecimal()), Skeleton ? *Skeleton->GetPackage()->GetName() : TEXT("(none)"),
 			Info.Tracks.Num(), Skeleton ? Skeleton->GetReferenceSkeleton().GetRawBoneNum() : 0,
 			Flags.IsEmpty() ? TEXT("") : *(TEXT(", ") + FString::Join(Flags, TEXT(", "))));
+	}
+
+	/** A montage has no frames or pose of its own: its length, sections and the animations its slots play, and those animations' paths. */
+	TArray<FString> MontageLines(const UAnimMontage& Montage, TArray<FString>& OutAnimations)
+	{
+		const USkeleton* Skeleton = Montage.GetSkeleton();
+		TArray<FString> Lines;
+		Lines.Add(FString::Printf(TEXT("%s (AnimMontage): %s s, slot group %s, skeleton %s%s"), *Montage.GetPackage()->GetName(), *Seconds(Montage.GetPlayLength()),
+			*Montage.GetGroupName().ToString(), Skeleton ? *Skeleton->GetPackage()->GetName() : TEXT("(none)"), Montage.HasRootMotion() ? TEXT(", root motion on") : TEXT("")));
+		TArray<FString> Sections;
+		for (const FCompositeSection& Section : Montage.CompositeSections)
+		{
+			Sections.Add(FString::Printf(TEXT("%s at %s s%s"), *Section.SectionName.ToString(), *Seconds(Section.GetTime()),
+				Section.NextSectionName.IsNone() ? TEXT("") : *FString::Printf(TEXT(" -> %s"), *Section.NextSectionName.ToString())));
+		}
+		Lines.Add(TEXT("sections: ") + (Sections.IsEmpty() ? FString(TEXT("(none)")) : FString::Join(Sections, TEXT(", "))));
+		for (const FSlotAnimationTrack& Slot : Montage.SlotAnimTracks)
+		{
+			TArray<FString> Segments;
+			for (const FAnimSegment& Segment : Slot.AnimTrack.AnimSegments)
+			{
+				const UAnimSequenceBase* Reference = Segment.GetAnimReference();
+				const FString Path = Reference ? Reference->GetPackage()->GetName() : FString(TEXT("(none)"));
+				if (Reference)
+				{
+					OutAnimations.AddUnique(Path);
+				}
+				Segments.Add(FString::Printf(TEXT("%s to %s s: %s (%s to %s s of it%s%s)"), *Seconds(Segment.StartPos), *Seconds(Segment.GetEndPos()), *Path,
+					*Seconds(Segment.AnimStartTime), *Seconds(Segment.AnimEndTime),
+					Segment.AnimPlayRate != 1.f ? *FString::Printf(TEXT(", rate %g"), Segment.AnimPlayRate) : TEXT(""),
+					Segment.LoopingCount != 1 ? *FString::Printf(TEXT(", %d loops"), Segment.LoopingCount) : TEXT("")));
+			}
+			Lines.Add(FString::Printf(TEXT("slot %s: %s"), *Slot.SlotName.ToString(), Segments.IsEmpty() ? TEXT("(empty)") : *FString::Join(Segments, TEXT("; "))));
+		}
+		return Lines;
 	}
 
 	/** Each bone must be in the animation's skeleton; an unknown one is reported with the names that contain it. */
@@ -295,6 +332,27 @@ AGE::Mcp::FAnimOverviewAnswer AGE::Mcp::AnimOverview(const FJsonObject& Argument
 	if (!Animation || (!ComparePath.IsEmpty() && !Other))
 	{
 		return { Error, true };
+	}
+	// The engine evaluates no pose for a montage (UAnimMontage::GetAnimationPose is check(false)), so positions come from its animations.
+	for (const UAnimSequenceBase* Asset : { Animation, Other })
+	{
+		const UAnimMontage* Montage = Cast<UAnimMontage>(Asset);
+		if (!Montage || (Asset == Animation && Bones.IsEmpty() && !Other))
+		{
+			continue;
+		}
+		TArray<FString> Animations;
+		TArray<FString> Lines = MontageLines(*Montage, Animations);
+		Lines.Add(FString::Printf(TEXT("A montage has no pose of its own, so 'bones' and 'compare' take one of the animations it plays: %s."),
+			Animations.IsEmpty() ? TEXT("(none)") : *FString::Join(Animations, TEXT(", "))));
+		return { FString::Join(Lines, TEXT("\n")), true };
+	}
+	if (const UAnimMontage* Montage = Cast<UAnimMontage>(Animation))
+	{
+		TArray<FString> Animations;
+		TArray<FString> Lines = MontageLines(*Montage, Animations);
+		Lines.Add(TEXT("Give one of its animations as 'asset' with 'bones' for bone positions over time."));
+		return { FString::Join(Lines, TEXT("\n")), false };
 	}
 	if (!CheckBones(*Animation, Bones, Error) || (Other && !CheckBones(*Other, Bones, Error)))
 	{

@@ -211,7 +211,12 @@ namespace
 			Json->SetStringField(TEXT("name"), Name);
 			Json->SetStringField(TEXT("type"), FAGEPropertyWriter::ObjectPath(Node.Node.GetScriptStruct()));
 			// The same one-line summary the StateTree editor shows for the node.
-			const FString Description = EditorData.GetNodeDescription(Node).ToString();
+			// Some engine nodes keep rich-text escapes in their plain-text form (Random: "&lt;").
+			FString Description = EditorData.GetNodeDescription(Node).ToString();
+			Description.ReplaceInline(TEXT("&lt;"), TEXT("<"));
+			Description.ReplaceInline(TEXT("&gt;"), TEXT(">"));
+			Description.ReplaceInline(TEXT("&quot;"), TEXT("\""));
+			Description.ReplaceInline(TEXT("&amp;"), TEXT("&"));
 			if (!Description.IsEmpty())
 			{
 				Json->SetStringField(TEXT("description"), Description);

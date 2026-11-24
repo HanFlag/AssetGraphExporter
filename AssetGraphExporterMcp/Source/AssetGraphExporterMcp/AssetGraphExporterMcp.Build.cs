@@ -1,6 +1,7 @@
 // Asset Graph Exporter
 
 using System.Diagnostics;
+using System.IO;
 using UnrealBuildTool;
 
 public class AssetGraphExporterMcp : ModuleRules
@@ -33,13 +34,18 @@ public class AssetGraphExporterMcp : ModuleRules
 		PrivateDefinitions.Add("AGE_BUILD_COMMIT=\"" + GitCommit() + "\"");
 	}
 
-	/** The short commit hash, with "+changes" when tracked files differ from it; "unknown" outside a git checkout. */
+	/**
+	 * The short commit hash, with "+changes" when tracked files differ from it. Only this plugin's own repository counts:
+	 * a copy rebuilt inside a game project's repository reads BuildCommit.txt, which Scripts\Build.bat writes into the package.
+	 */
 	private string GitCommit()
 	{
-		string Head = RunGit("rev-parse --short HEAD");
+		string Head = RunGit("ls-files --error-unmatch \":/AssetGraphExporterMcp/AssetGraphExporterMcp.uplugin\"") != "" ? RunGit("rev-parse --short HEAD") : "";
 		if (string.IsNullOrEmpty(Head))
 		{
-			return "unknown";
+			string StampFile = Path.Combine(ModuleDirectory, "BuildCommit.txt");
+			string Stamp = File.Exists(StampFile) ? File.ReadAllText(StampFile).Trim() : "";
+			return Stamp != "" ? Stamp : "unknown";
 		}
 		return string.IsNullOrEmpty(RunGit("status --porcelain --untracked-files=no")) ? Head : Head + "+changes";
 	}

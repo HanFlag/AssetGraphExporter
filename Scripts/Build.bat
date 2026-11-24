@@ -41,9 +41,19 @@ if "%RESULT%"=="0" (
 	echo Building the activity window ... >> "%ROOT%\Logs\build_mcp.log"
 	"%SystemRoot%\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /target:winexe /optimize+ /warnaserror+ /codepage:65001 /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:System.Web.Extensions.dll /win32icon:"%ROOT%\AssetGraphExporterMcp\Source\ActivityWindow\AGEActivityWindow.ico" /out:"%ROOT%\Packaged\AssetGraphExporterMcp\Binaries\Win64\AGEActivityWindow.exe" "%ROOT%\AssetGraphExporterMcp\Source\ActivityWindow\AGEActivityWindow.cs" >> "%ROOT%\Logs\build_mcp.log" 2>&1
 	if errorlevel 1 set "RESULT=1"
+	rem The commit this package came from, for age_status when the plugin is rebuilt inside another repository.
+	call :WriteCommit "%ROOT%\Packaged\AssetGraphExporterMcp\Source\AssetGraphExporterMcp\BuildCommit.txt"
 )
 call :ShowLog "%ROOT%\Logs\build_mcp.log" AssetGraphExporterMcp %RESULT%
 exit /b %RESULT%
+
+:WriteCommit
+set "COMMIT="
+for /f %%H in ('git -C "%ROOT%" rev-parse --short HEAD 2^>nul') do set "COMMIT=%%H"
+if not defined COMMIT exit /b 0
+git -C "%ROOT%" diff --quiet HEAD 2>nul || set "COMMIT=%COMMIT%+changes"
+> "%~1" echo %COMMIT%
+exit /b 0
 
 :ShowLog
 echo.

@@ -40,6 +40,8 @@
 #include "Misc/Paths.h"
 #include "Modules/ModuleManager.h"
 #include "HAL/PlatformOutputDevices.h"
+#include "Editor.h"
+#include "FileHelpers.h"
 #include "PackageTools.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
@@ -1265,6 +1267,35 @@ namespace AGE::McpToolsDetail
 		else
 		{
 			Lines.Add(TEXT("mode: editor. Answers include unsaved changes."));
+			if (GEditor && GEditor->PlayWorld)
+			{
+				Lines.Add(TEXT("play: a Play In Editor session is running"));
+			}
+			// What a build or an editor restart would lose: the same lists the editor's save prompt shows.
+			TArray<UPackage*> Maps;
+			TArray<UPackage*> Content;
+			FEditorFileUtils::GetDirtyWorldPackages(Maps);
+			FEditorFileUtils::GetDirtyContentPackages(Content);
+			auto Names = [](const TArray<UPackage*>& Packages)
+			{
+				TArray<FString> Result;
+				for (const UPackage* Package : Packages)
+				{
+					Result.Add(Package->GetName());
+				}
+				Result.Sort();
+				constexpr int32 MaxShown = 30;
+				const int32 Total = Result.Num();
+				if (Total > MaxShown)
+				{
+					Result.SetNum(MaxShown);
+					Result.Add(FString::Printf(TEXT("+%d more"), Total - MaxShown));
+				}
+				return FString::Join(Result, TEXT(", "));
+			};
+			Lines.Add(Maps.IsEmpty() && Content.IsEmpty() ? FString(TEXT("unsaved: none"))
+				: FString::Printf(TEXT("unsaved: %d map(s)%s%s; %d asset(s)%s%s"), Maps.Num(), Maps.IsEmpty() ? TEXT("") : TEXT(" "), *Names(Maps),
+					Content.Num(), Content.IsEmpty() ? TEXT("") : TEXT(" "), *Names(Content)));
 		}
 		Lines.Add(FString::Printf(TEXT("project: %s"), FApp::GetProjectName()));
 		Lines.Add(FString::Printf(TEXT("engine: %s"), *FEngineVersion::Current().ToString()));
@@ -1518,7 +1549,8 @@ TArray<TSharedRef<IModelContextProtocolTool>> AGE::Mcp::CreateTools()
 		&Log));
 
 	Tools.Add(MakeShared<FTool>(TEXT("age_status"),
-		TEXT("Where the age_* answers come from (the running editor, including unsaved changes, or the background server reading saved files), plus project, engine and exporter versions."),
+		TEXT("Where the age_* answers come from (the running editor, including unsaved changes, or the background server reading saved files), plus project, engine and exporter versions. "
+			"In the editor it also says whether a Play In Editor session is running and lists the unsaved maps and assets (what closing the editor for a build would lose)."),
 		FSchema().Build(),
 		&Status));
 

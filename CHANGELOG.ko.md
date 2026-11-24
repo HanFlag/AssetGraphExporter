@@ -23,6 +23,8 @@
 - `age_statetree_overview`가 자기 설명 글이 없는 태스크·조건·이밸류에이터(C++ 노드에 흔함)의 바꾼 값을 붙입니다. 예: `task: Circle Strafe [STTask_CircleStrafe] {"Radius":1200,"MinDuration":4}`. 같은 종류 노드 두 개가 설정이 달라도 똑같이 보이던 문제가 없어집니다. 설명 글에 이미 값이 나오는 노드는 그대로입니다.
 - `age_statetree_overview`와 StateTree 내보내기가 노드 설명의 `<`, `>`를 그대로 씁니다. Random 조건이 `Random [0..1] &lt; 0.3`으로 나오던 것이 이제 `Random [0..1] < 0.3`입니다.
 - 활동 창이 5.9 내장 도구 `describe_toolsets`, `describe_tools`의 이름을 보여 줍니다(5.8에는 `describe_toolset`).
+- `age_animbp_overview`와 `age_blueprint_overview`가 Select 노드의 선택지에 이름을 붙입니다. bool이면 `Select(IsBlocking; False: WalkSpeed, True: BlockSpeed)`, enum이면 항목 이름입니다. 전에는 `Select(a, b, index)`로 써서 어느 쪽이 False인지 알 수 없었습니다.
+- 에디터에서 `age_status`가 Play-In-Editor가 돌고 있는지와 저장 안 된 맵·에셋 목록(빌드하려고 에디터를 닫으면 잃는 것)을 알려 줍니다.
 
 ## 0.3.1 (베타) — 2026-11-03
 

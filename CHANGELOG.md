@@ -23,6 +23,8 @@
 - `age_statetree_overview` shows the changed values of a task, condition or evaluator that has no description text of its own (common for C++ nodes), e.g. `task: Circle Strafe [STTask_CircleStrafe] {"Radius":1200,"MinDuration":4}`. Two nodes of one type with different settings no longer look the same. Nodes whose description already shows their values are unchanged.
 - `age_statetree_overview` and StateTree exports write `<` and `>` in node descriptions as themselves: a Random condition read `Random [0..1] &lt; 0.3`, it now reads `Random [0..1] < 0.3`.
 - The activity window names the 5.9 built-in tools `describe_toolsets` and `describe_tools` (5.8 had `describe_toolset`).
+- `age_animbp_overview` and `age_blueprint_overview` name a Select node's options: `Select(IsBlocking; False: WalkSpeed, True: BlockSpeed)` for a bool, the entry names for an enum. They were written as `Select(a, b, index)`, which did not say which option is False.
+- `age_status` in the editor says whether a Play-In-Editor session is running and lists the unsaved maps and assets (what closing the editor for a build would lose).
 
 ## 0.3.1 (beta) — 2026-11-03
 

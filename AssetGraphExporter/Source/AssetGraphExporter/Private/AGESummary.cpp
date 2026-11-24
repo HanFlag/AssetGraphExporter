@@ -471,6 +471,21 @@ namespace AGE::SummaryDetail
 				return CallName(Node) + TEXT(".") + OutputPin;
 			}
 
+			if (Class == TEXT("K2Node_Select"))
+			{
+				// Options are named after the index: False/True for a bool, the entry names for an enum (Option N for an int).
+				const FJsonObject* IndexPin = FindPin(Node, TEXT("Index"));
+				TArray<FString> Options;
+				for (const FJsonObject* Pin : Pins(Node))
+				{
+					if (Pin != IndexPin && IsInput(*Pin) && !IsExec(*Pin) && !IsHidden(*Pin))
+					{
+						Options.Add(PinLabel(*Pin) + TEXT(": ") + InputValue(*Pin, Depth));
+					}
+				}
+				return FString::Printf(TEXT("Select(%s; %s)"), IndexPin ? *InputValue(*IndexPin, Depth) : TEXT("?"), *FString::Join(Options, TEXT(", ")));
+			}
+
 			const TArray<FString> Args = Arguments(Node, Depth);
 			int32 DataOutputs = 0;
 			for (const FJsonObject* Pin : Pins(Node))

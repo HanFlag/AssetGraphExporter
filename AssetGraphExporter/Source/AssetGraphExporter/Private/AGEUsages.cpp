@@ -192,7 +192,7 @@ bool AGE::Usages::ResolveSymbol(const FString& Text, FAGEUsageSymbol& OutSymbol,
 	UClass* Class = AGE::ResolveClass(ClassText);
 	if (!Class)
 	{
-		OutError = FString::Printf(TEXT("No class named %s."), *ClassText);
+		OutError = FString::Printf(TEXT("No class named %s. For a function or property give its class too, e.g. GameplayAbility::GetAvatarActorFromActorInfo; a member name alone is not searched."), *ClassText);
 		return false;
 	}
 	if (!Class->HasAnyClassFlags(CLASS_Native))

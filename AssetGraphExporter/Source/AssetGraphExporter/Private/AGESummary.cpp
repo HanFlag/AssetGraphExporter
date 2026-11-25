@@ -295,6 +295,36 @@ namespace AGE::SummaryDetail
 		return Text;
 	}
 
+	/** Type of a function's local variable, which is exported as the raw pin type properties (PinCategory, ...). */
+	FString LocalTypeText(const FJsonObject* Type)
+	{
+		if (!Type)
+		{
+			return FString();
+		}
+		auto Terminal = [](const FString& Category, const FString& SubCategory, const FString& Object)
+		{
+			if (!Object.IsEmpty())
+			{
+				return ShortName(Object);
+			}
+			return Category == TEXT("real") && !SubCategory.IsEmpty() ? SubCategory : Category;
+		};
+		FString Text = Terminal(StringField(*Type, TEXT("PinCategory")), StringField(*Type, TEXT("PinSubCategory")), StringField(*Type, TEXT("PinSubCategoryObject")));
+		const FString Container = StringField(*Type, TEXT("ContainerType"));
+		if (Container == TEXT("Array") || Container == TEXT("Set"))
+		{
+			Text = FString::Printf(TEXT("%s<%s>"), *Container.ToLower(), *Text);
+		}
+		else if (Container == TEXT("Map"))
+		{
+			const FJsonObject* ValueType = ObjectField(*Type, TEXT("PinValueType"));
+			const FString ValueText = ValueType ? Terminal(StringField(*ValueType, TEXT("TerminalCategory")), StringField(*ValueType, TEXT("TerminalSubCategory")), StringField(*ValueType, TEXT("TerminalSubCategoryObject"))) : FString(TEXT("?"));
+			Text = FString::Printf(TEXT("map<%s, %s>"), *Text, *ValueText);
+		}
+		return Text;
+	}
+
 	/** One exported graph with its nodes indexed by guid. */
 	struct FGraphView
 	{
@@ -578,6 +608,39 @@ namespace AGE::SummaryDetail
 				{
 					Head += TEXT("(") + FString::Join(Parameters, TEXT(", ")) + TEXT(")");
 				}
+				// A function also says what it returns (the data inputs of its Return Node) and its local variables.
+				TArray<FString> Locals;
+				if (StringField(*Node, TEXT("class")) == TEXT("K2Node_FunctionEntry"))
+				{
+					for (const FJsonObject* Other : View.Nodes)
+					{
+						if (StringField(*Other, TEXT("class")) != TEXT("K2Node_FunctionResult"))
+						{
+							continue;
+						}
+						TArray<FString> Returns;
+						for (const FJsonObject* Pin : Pins(*Other))
+						{
+							if (IsInput(*Pin) && !IsExec(*Pin) && !IsHidden(*Pin))
+							{
+								Returns.Add(StringField(*Pin, TEXT("name")) + TEXT(":") + TypeText(PinType(*Pin)));
+							}
+						}
+						if (Returns.Num() > 0)
+						{
+							Head += TEXT(" -> ") + FString::Join(Returns, TEXT(", "));
+						}
+						break;
+					}
+					const FJsonObject* Properties = ObjectField(*Node, TEXT("properties"));
+					for (const TSharedPtr<FJsonValue>& Value : Properties ? ArrayField(*Properties, TEXT("LocalVariables")) : TArray<TSharedPtr<FJsonValue>>())
+					{
+						if (const FJsonObject* Local = AsObject(Value))
+						{
+							Locals.Add(StringField(*Local, TEXT("VarName")) + TEXT(":") + LocalTypeText(ObjectField(*Local, TEXT("VarType"))));
+						}
+					}
+				}
 				Lines.Add(TEXT("  ") + Head + StateSuffix(*Node) + TEXT(":"));
 				const int32 HeadIndex = Lines.Num() - 1;
 
@@ -600,6 +663,10 @@ namespace AGE::SummaryDetail
 				if (Lines.Num() == HeadIndex + 1)
 				{
 					Lines[HeadIndex] += TEXT(" (nothing connected)");
+				}
+				if (Locals.Num() > 0)
+				{
+					Lines.Insert(TEXT("    locals: ") + FString::Join(Locals, TEXT(", ")), HeadIndex + 1);
 				}
 			}
 

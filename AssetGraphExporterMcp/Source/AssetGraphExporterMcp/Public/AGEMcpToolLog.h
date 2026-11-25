@@ -14,4 +14,8 @@ namespace AGE::Mcp
 
 	/** Call once the tool has answered: the call is listed with its result. */
 	ASSETGRAPHEXPORTERMCP_API void RecordExternalToolCall(const FString& Tool, const FJsonObject& Arguments, const FModelContextProtocolToolResult& Result, double Milliseconds);
+
+	/** age_status in the editor: another plugin adds its own lines after the built-in ones. */
+	DECLARE_MULTICAST_DELEGATE_OneParam(FOnStatusLines, TArray<FString>& /*Lines*/);
+	ASSETGRAPHEXPORTERMCP_API FOnStatusLines& OnStatusLines();
 }

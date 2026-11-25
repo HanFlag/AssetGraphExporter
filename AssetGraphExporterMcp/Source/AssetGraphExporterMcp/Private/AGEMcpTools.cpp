@@ -13,6 +13,7 @@
 #include "AGEMcpLiveCoding.h"
 #include "AGEMcpRevision.h"
 #include "AGEMcpState.h"
+#include "AGEMcpToolLog.h"
 #include "AGESummary.h"
 #include "AGEUsages.h"
 #include "IModelContextProtocolTool.h"
@@ -1317,6 +1318,10 @@ namespace AGE::McpToolsDetail
 			? FString::Printf(TEXT("editing: %s %s (%s) is installed; age_guide explains the editing tools and confirm/auto mode"), *EditPlugin->GetName(), *EditPlugin->GetDescriptor().VersionName,
 				*BuiltText(*EditPlugin->GetName()))
 			: FString(TEXT("editing: no editing plugin installed; the age_* tools only read")));
+		if (!AGE::Mcp::IsServeMode())
+		{
+			AGE::Mcp::OnStatusLines().Broadcast(Lines);
+		}
 		return TextResult(FString::Join(Lines, TEXT("\n")));
 	}
 

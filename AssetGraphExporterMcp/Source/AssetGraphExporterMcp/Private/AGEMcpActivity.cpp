@@ -449,6 +449,12 @@ void AGE::Mcp::Activity::RecordToolCall(const FString& Tool, const FJsonObject& 
 	Add(MoveTemp(Entry));
 }
 
+AGE::Mcp::FOnStatusLines& AGE::Mcp::OnStatusLines()
+{
+	static FOnStatusLines Delegate;
+	return Delegate;
+}
+
 void AGE::Mcp::NoteExternalToolStart()
 {
 	AGE::Mcp::NoteActivity();

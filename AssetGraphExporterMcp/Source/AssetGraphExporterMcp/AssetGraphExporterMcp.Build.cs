@@ -28,6 +28,9 @@ public class AssetGraphExporterMcp : ModuleRules
 			"Projects",
 			// age_anim_overview: the engine's pose evaluation (UAnimPoseExtensions).
 			"AnimationBlueprintLibrary",
+			// Live Coding warning: editor notification.
+			"Slate",
+			"SlateCore",
 		});
 
 		// age_status names the source a build came from, so two builds of the same version can be told apart.

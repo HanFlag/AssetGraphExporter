@@ -10,6 +10,7 @@
 #include "AGEMcpActivity.h"
 #include "AGEMcpAnim.h"
 #include "AGEMcpLevel.h"
+#include "AGEMcpLiveCoding.h"
 #include "AGEMcpRevision.h"
 #include "AGEMcpState.h"
 #include "AGESummary.h"
@@ -1296,6 +1297,7 @@ namespace AGE::McpToolsDetail
 			Lines.Add(Maps.IsEmpty() && Content.IsEmpty() ? FString(TEXT("unsaved: none"))
 				: FString::Printf(TEXT("unsaved: %d map(s)%s%s; %d asset(s)%s%s"), Maps.Num(), Maps.IsEmpty() ? TEXT("") : TEXT(" "), *Names(Maps),
 					Content.Num(), Content.IsEmpty() ? TEXT("") : TEXT(" "), *Names(Content)));
+			AGE::Mcp::LiveCoding::AppendStatus(Lines);
 		}
 		Lines.Add(FString::Printf(TEXT("project: %s"), FApp::GetProjectName()));
 		Lines.Add(FString::Printf(TEXT("engine: %s"), *FEngineVersion::Current().ToString()));
@@ -1550,7 +1552,8 @@ TArray<TSharedRef<IModelContextProtocolTool>> AGE::Mcp::CreateTools()
 
 	Tools.Add(MakeShared<FTool>(TEXT("age_status"),
 		TEXT("Where the age_* answers come from (the running editor, including unsaved changes, or the background server reading saved files), plus project, engine and exporter versions. "
-			"In the editor it also says whether a Play In Editor session is running and lists the unsaved maps and assets (what closing the editor for a build would lose)."),
+			"In the editor it also says whether a Play In Editor session is running and lists the unsaved maps and assets (what closing the editor for a build would lose), "
+			"and, after Live Coding patches, whether a patch changed C++ class or struct layouts (a header edit) that need an editor restart."),
 		FSchema().Build(),
 		&Status));
 

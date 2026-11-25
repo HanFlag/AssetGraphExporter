@@ -1,6 +1,7 @@
 // Asset Graph Exporter
 
 #include "AGEMcpActivity.h"
+#include "AGEMcpLiveCoding.h"
 #include "AGEMcpState.h"
 #include "AGEMcpTools.h"
 #include "Containers/Ticker.h"
@@ -34,12 +35,17 @@ public:
 		{
 			PostEngineInitHandle = FCoreDelegates::GetOnPostEngineInit().AddRaw(this, &FAssetGraphExporterMcpModule::BeginServerAutoStart);
 		}
+		if (GIsEditor && !IsRunningCommandlet())
+		{
+			AGE::Mcp::LiveCoding::Startup();
+		}
 	}
 
 	virtual void ShutdownModule() override
 	{
 		FCoreDelegates::GetOnPostEngineInit().Remove(PostEngineInitHandle);
 		FTSTicker::RemoveTicker(AutoStartTicker);
+		AGE::Mcp::LiveCoding::Shutdown();
 		AGE::Mcp::Activity::Shutdown();
 		if (IModelContextProtocolModule* Mcp = IModelContextProtocolModule::Get())
 		{

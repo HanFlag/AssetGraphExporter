@@ -1,6 +1,7 @@
 // Asset Graph Exporter
 
 #include "AGEBlueprintHandler.h"
+#include "AGECustomizableObjectHandler.h"
 #include "AGEHandlerRegistry.h"
 #include "AGELog.h"
 #include "AGESkeletonHandler.h"
@@ -16,6 +17,7 @@ public:
 		FAGEHandlerRegistry::Get().Register(MakeShared<FAGEBlueprintHandler>());
 		FAGEHandlerRegistry::Get().Register(MakeShared<FAGEAnimBlueprintHandler>());
 		FAGEHandlerRegistry::Get().Register(MakeShared<FAGESkeletonHandler>());
+		FAGEHandlerRegistry::Get().Register(MakeShared<FAGECustomizableObjectHandler>());
 	}
 
 	virtual void ShutdownModule() override
@@ -23,6 +25,7 @@ public:
 		FAGEHandlerRegistry::Get().Unregister(TEXT("Blueprint"));
 		FAGEHandlerRegistry::Get().Unregister(TEXT("AnimBlueprint"));
 		FAGEHandlerRegistry::Get().Unregister(TEXT("Skeleton"));
+		FAGEHandlerRegistry::Get().Unregister(TEXT("CustomizableObject"));
 	}
 };
 

@@ -1,7 +1,10 @@
 // Asset Graph Exporter
 
 #include "AGEMcpCapture.h"
+#include "AGECapture.h"
+#include "AGEMcpPreview.h"
 #include "AGEMcpToolLog.h"
+#include "AGEMcpVideo.h"
 #include "Containers/Ticker.h"
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
@@ -42,13 +45,7 @@ namespace AGE::McpCaptureDetail
 	/** A newly opened editor tab needs a few frames before it has drawn itself. */
 	constexpr double SettleSeconds = 0.5;
 
-	struct FFrame
-	{
-		TArray<FColor> Pixels;
-		int32 Width = 0;
-		int32 Height = 0;
-		double Seconds = 0.0;
-	};
+	using FFrame = AGE::Mcp::FCaptureFrame;
 
 	/** Fits Width x Height into LongSide, never larger than it is. */
 	FIntPoint FitSize(int32 Width, int32 Height, int32 LongSide)
@@ -344,6 +341,37 @@ namespace AGE::McpCaptureDetail
 		return Window;
 	}
 
+	bool TakePicture(const TSharedRef<SWidget>& Widget, FFrame& OutFrame)
+	{
+		FIntVector Size;
+		if (!FSlateApplication::Get().TakeScreenshot(Widget, OutFrame.Pixels, Size) || Size.X <= 0 || Size.Y <= 0 || OutFrame.Pixels.Num() != Size.X * Size.Y)
+		{
+			return false;
+		}
+		OutFrame.Width = Size.X;
+		OutFrame.Height = Size.Y;
+		for (FColor& Pixel : OutFrame.Pixels)
+		{
+			Pixel.A = 255;
+		}
+		return true;
+	}
+
+	/** The files written, as text, with the picture to look at when bImage. Lines: what the pictures are of. */
+	FModelContextProtocolToolResult FramesResult(const TArray<FFrame>& Frames, double Interval, int32 LongSide, bool bImage, TArray<FString> Lines)
+	{
+		TArray64<uint8> Jpeg;
+		AGE::Mcp::WriteCaptureFrames(Frames, Interval, LongSide, Lines, bImage ? &Jpeg : nullptr);
+		FModelContextProtocolToolResult Result = MakeTextResult(FString::Join(Lines, TEXT("\n")));
+		if (!Jpeg.IsEmpty())
+		{
+			TArray<TSharedPtr<FJsonValue>> Content = Result.JsonObject->GetArrayField(TEXT("content"));
+			Content.Add(MakeShared<FJsonValueObject>(UE::ModelContextProtocol::MakeImageContentObject(TEXT("image/jpeg"), FBase64::Encode(Jpeg.GetData(), static_cast<uint32>(Jpeg.Num())))));
+			Result.JsonObject->SetArrayField(TEXT("content"), Content);
+		}
+		return Result;
+	}
+
 	class FCapture : public TSharedFromThis<FCapture>
 	{
 	public:
@@ -382,18 +410,11 @@ namespace AGE::McpCaptureDetail
 				return true;
 			}
 			FFrame Frame;
-			FIntVector Size;
-			if (!FSlateApplication::Get().TakeScreenshot(Widget, Frame.Pixels, Size) || Size.X <= 0 || Size.Y <= 0 || Frame.Pixels.Num() != Size.X * Size.Y)
+			if (!TakePicture(Widget, Frame))
 			{
 				return End(MakeErrorResult(FString::Printf(TEXT("The editor could not take a picture of %s (is its window minimized or hidden?). No files were written."), *Name)));
 			}
-			Frame.Width = Size.X;
-			Frame.Height = Size.Y;
 			Frame.Seconds = Elapsed;
-			for (FColor& Pixel : Frame.Pixels)
-			{
-				Pixel.A = 255;
-			}
 			// Several frames are kept small from the start; one frame is saved at full size.
 			Frames.Add(FrameCount > 1 ? Resized(Frame, FitSize(Frame.Width, Frame.Height, LongSide)) : MoveTemp(Frame));
 			if (Frames.Num() < FrameCount)
@@ -410,48 +431,11 @@ namespace AGE::McpCaptureDetail
 
 		FModelContextProtocolToolResult Write()
 		{
-			const FString Folder = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("AGE") / TEXT("Captures") / FDateTime::Now().ToString(TEXT("%Y%m%d_%H%M%S_%s")));
-			IFileManager::Get().MakeDirectory(*Folder, /*Tree=*/true);
 			TArray<FString> Lines;
-			const auto Save = [&Folder, &Lines](const TCHAR* File, const FFrame& Picture, const TCHAR* What)
-			{
-				const FString Path = Folder / File;
-				const bool bSaved = FImageUtils::SaveImageByExtension(*Path, FImageView(Picture.Pixels.GetData(), Picture.Width, Picture.Height));
-				Lines.Add(FString::Printf(TEXT("%s: %s (%d x %d)%s"), What, *Path, Picture.Width, Picture.Height, bSaved ? TEXT("") : TEXT(" -- COULD NOT BE WRITTEN")));
-			};
-
-			FFrame Shown;
-			if (FrameCount == 1)
-			{
-				Lines.Add(FString::Printf(TEXT("Picture of %s."), *Name));
-				Save(TEXT("capture.png"), Frames[0], TEXT("file"));
-				Shown = Resized(Frames[0], FitSize(Frames[0].Width, Frames[0].Height, LongSide));
-			}
-			else
-			{
-				Lines.Add(FString::Printf(TEXT("%d pictures of %s over %.2f s (%.2f s apart; real times: %s)."), Frames.Num(), *Name, Frames.Last().Seconds - Frames[0].Seconds, Interval,
+			Lines.Add(FrameCount == 1 ? FString::Printf(TEXT("Picture of %s."), *Name)
+				: FString::Printf(TEXT("%d pictures of %s over %.2f s (%.2f s apart; real times: %s)."), Frames.Num(), *Name, Frames.Last().Seconds - Frames[0].Seconds, Interval,
 					*FString::JoinBy(Frames, TEXT(", "), [this](const FFrame& Frame) { return FString::Printf(TEXT("%.2f"), Frame.Seconds - Frames[0].Seconds); })));
-				Shown = ContactSheet(Frames, MaxLongSide);
-				Save(TEXT("sheet.jpg"), Shown, TEXT("all frames in one picture, left to right then top to bottom"));
-				const FString GifPath = Folder / TEXT("capture.gif");
-				const bool bGif = FFileHelper::SaveArrayToFile(MakeGif(Frames, Interval), *GifPath);
-				Lines.Add(FString::Printf(TEXT("animation for the user to open (256 colors): %s%s"), *GifPath, bGif ? TEXT("") : TEXT(" -- COULD NOT BE WRITTEN")));
-				for (int32 Index = 0; Index < Frames.Num(); ++Index)
-				{
-					FImageUtils::SaveImageByExtension(*(Folder / FString::Printf(TEXT("frame_%03d.png"), Index)), FImageView(Frames[Index].Pixels.GetData(), Frames[Index].Width, Frames[Index].Height));
-				}
-				Lines.Add(FString::Printf(TEXT("single frames: %s (%d x %d)"), *(Folder / TEXT("frame_000.png ...")), Frames[0].Width, Frames[0].Height));
-			}
-
-			FModelContextProtocolToolResult Result = MakeTextResult(FString::Join(Lines, TEXT("\n")));
-			TArray64<uint8> Jpeg;
-			if (bImage && FImageUtils::CompressImage(Jpeg, TEXT("jpg"), FImageView(Shown.Pixels.GetData(), Shown.Width, Shown.Height), 85))
-			{
-				TArray<TSharedPtr<FJsonValue>> Content = Result.JsonObject->GetArrayField(TEXT("content"));
-				Content.Add(MakeShared<FJsonValueObject>(UE::ModelContextProtocol::MakeImageContentObject(TEXT("image/jpeg"), FBase64::Encode(Jpeg.GetData(), static_cast<uint32>(Jpeg.Num())))));
-				Result.JsonObject->SetArrayField(TEXT("content"), Content);
-			}
-			return Result;
+			return FramesResult(Frames, Interval, LongSide, bImage, MoveTemp(Lines));
 		}
 
 		/** Always returns false: the ticker is done. The tool's reference to this object goes with it. */
@@ -504,9 +488,13 @@ namespace AGE::McpCaptureDetail
 				"target \"viewport\" (default): the level viewport, which shows the game while Play In Editor runs in it. "
 				"target \"window\": an editor window as the user sees it (with 'title', the window whose title contains that text; otherwise the active one). "
 				"target an asset path: that asset's editor, opened or brought forward first (a Blueprint or other graph, a mesh, an animation preview). "
+				"Opening an editor can bring up an engine dialog (seen with an engine default material) that holds this call until the user closes it. "
+				"target \"preview\": 'assets' (static and skeletal meshes) drawn side by side in a scene of their own, as an asset editor's preview shows them, with no editor opened and the open map untouched; "
+				"'yaw' and 'pitch' place the camera, 'animation' and 'time' pose the skeletal meshes (with frames above 1, 'interval' is animation time, so the pictures show the animation over time at once; "
+				"'animation' alone uses its preview mesh). "
 				"frames above 1 takes several pictures 'interval' seconds apart, to see motion (a playing game, an animation preview): "
-				"you get them as one picture, left to right then top to bottom, and the user gets an animated GIF. "
-				"Files go under the project's Saved/AGE/Captures; give the user the paths. Videos are not made: you cannot watch one, and the frames show the same.");
+				"you get them as one picture, left to right then top to bottom, and the user gets an animated GIF and an mp4 video (H.264, on Windows). "
+				"Files go under the project's Saved/AGE/Captures; give the user the paths. You cannot watch the video: the one picture shows the same frames.");
 		}
 
 		virtual TSharedPtr<FJsonObject> GetInputJsonSchema() const override
@@ -519,7 +507,12 @@ namespace AGE::McpCaptureDetail
 				return MakeShared<FJsonValueObject>(Object);
 			};
 			const TSharedRef<FJsonObject> Properties = MakeShared<FJsonObject>();
-			Properties->SetField(TEXT("target"), Property(TEXT("string"), TEXT("\"viewport\" (default), \"window\", or an asset path whose editor to show.")));
+			Properties->SetField(TEXT("target"), Property(TEXT("string"), TEXT("\"viewport\" (default), \"window\", \"preview\", or an asset path whose editor to show.")));
+			Properties->SetField(TEXT("assets"), Property(TEXT("array"), TEXT("With target \"preview\": paths (texts) of the static and skeletal meshes to show.")));
+			Properties->SetField(TEXT("animation"), Property(TEXT("string"), TEXT("With target \"preview\": an animation sequence or montage that poses the skeletal meshes of its skeleton.")));
+			Properties->SetField(TEXT("time"), Property(TEXT("number"), TEXT("With 'animation': the animation time in seconds of the (first) picture, default 0.")));
+			Properties->SetField(TEXT("yaw"), Property(TEXT("number"), TEXT("With target \"preview\": where the camera stands around the assets, in degrees. 0 looks at the side facing +Y (a character's front), 90 at the side facing -X, 180 at the back. Default 30.")));
+			Properties->SetField(TEXT("pitch"), Property(TEXT("number"), TEXT("With target \"preview\": how far the camera is above the horizon, in degrees (90 looks straight down). Default 15.")));
 			Properties->SetField(TEXT("title"), Property(TEXT("string"), TEXT("With target \"window\": part of the window's title.")));
 			Properties->SetField(TEXT("frames"), Property(TEXT("integer"), TEXT("How many pictures, default 1, at most 60.")));
 			Properties->SetField(TEXT("interval"), Property(TEXT("number"), TEXT("Seconds between pictures, default 0.2. frames x interval is at most 20 s.")));
@@ -564,6 +557,42 @@ namespace AGE::McpCaptureDetail
 				Refuse(FString::Printf(TEXT("'frames' must be 1 to %d and the pictures must fit in %.0f s (frames x interval). Nothing was captured."), MaxFrames, MaxSeconds));
 				return;
 			}
+			if (Target.TrimStartAndEnd() == TEXT("preview"))
+			{
+				if (!GEditor || IsRunningCommandlet())
+				{
+					Refuse(TEXT("A preview is drawn by the editor, so it needs the project open in the Unreal editor. Nothing was captured."));
+					return;
+				}
+				const double Start = FPlatformTime::Seconds();
+				AGE::Mcp::FPreviewRequest Request;
+				Arguments.TryGetStringArrayField(TEXT("assets"), Request.Assets);
+				Arguments.TryGetStringField(TEXT("animation"), Request.Animation);
+				Request.Animation.TrimStartAndEndInline();
+				Arguments.TryGetNumberField(TEXT("time"), Request.Time);
+				Arguments.TryGetNumberField(TEXT("yaw"), Request.Yaw);
+				Arguments.TryGetNumberField(TEXT("pitch"), Request.Pitch);
+				Request.Frames = Frames;
+				Request.Interval = Interval;
+				Request.Size = FMath::Clamp(LongSide, 64, MaxLongSide);
+				TArray<FFrame> Pictures;
+				FString Name;
+				FString Error;
+				if (!AGE::Mcp::RenderPreview(Request, Pictures, Name, Error))
+				{
+					Refuse(Error + TEXT(" Nothing was captured."));
+					return;
+				}
+				TArray<FString> Lines;
+				Lines.Add(Frames == 1 ? FString::Printf(TEXT("Picture of %s%s."), *Name, Request.Animation.IsEmpty() ? TEXT("") : *FString::Printf(TEXT(" at %.3f s"), Request.Time))
+					: FString::Printf(TEXT("%d pictures of %s (animation times: %s)."), Frames, *Name,
+						*FString::JoinBy(Pictures, TEXT(", "), [](const FFrame& Frame) { return FString::Printf(TEXT("%.3f"), Frame.Seconds); })));
+				// In the video and the GIF each picture stays at least a tenth of a second, however close the animation times are.
+				const FModelContextProtocolToolResult Result = FramesResult(Pictures, FMath::Max(Interval, 0.1), Request.Size, bImage, MoveTemp(Lines));
+				AGE::Mcp::RecordExternalToolCall(TEXT("age_capture"), Arguments, Result, (FPlatformTime::Seconds() - Start) * 1000.0);
+				OnComplete(Result);
+				return;
+			}
 
 			FString Name;
 			FString Error;
@@ -587,6 +616,68 @@ namespace AGE::McpCaptureDetail
 			}
 		}
 	};
+}
+
+bool AGE::Mcp::CaptureLevelViewport(int32 LongSide, FCaptureFrame& OutFrame, FString& OutError)
+{
+	using namespace AGE::McpCaptureDetail;
+	FString Name;
+	bool bOpened = false;
+	const TSharedPtr<SWidget> Widget = FindTarget(TEXT("viewport"), FString(), Name, bOpened, OutError);
+	FCaptureFrame Full;
+	if (!Widget.IsValid())
+	{
+		return false;
+	}
+	if (!TakePicture(Widget.ToSharedRef(), Full))
+	{
+		OutError = TEXT("The editor could not take a picture of the level viewport (is its window minimized or hidden?).");
+		return false;
+	}
+	OutFrame = Resized(Full, FitSize(Full.Width, Full.Height, FMath::Clamp(LongSide, 64, MaxLongSide)));
+	return true;
+}
+
+void AGE::Mcp::WriteCaptureFrames(const TArray<FCaptureFrame>& Frames, double FrameSeconds, int32 LongSide, TArray<FString>& OutLines, TArray64<uint8>* OutJpeg)
+{
+	using namespace AGE::McpCaptureDetail;
+	const FString Folder = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("AGE") / TEXT("Captures") / FDateTime::Now().ToString(TEXT("%Y%m%d_%H%M%S_%s")));
+	IFileManager::Get().MakeDirectory(*Folder, /*Tree=*/true);
+	const auto Save = [&Folder, &OutLines](const TCHAR* File, const FFrame& Picture, const TCHAR* What)
+	{
+		const FString Path = Folder / File;
+		const bool bSaved = FImageUtils::SaveImageByExtension(*Path, FImageView(Picture.Pixels.GetData(), Picture.Width, Picture.Height));
+		OutLines.Add(FString::Printf(TEXT("%s: %s (%d x %d)%s"), What, *Path, Picture.Width, Picture.Height, bSaved ? TEXT("") : TEXT(" -- COULD NOT BE WRITTEN")));
+	};
+
+	FFrame Shown;
+	if (Frames.Num() == 1)
+	{
+		Save(TEXT("capture.png"), Frames[0], TEXT("file"));
+		Shown = Resized(Frames[0], FitSize(Frames[0].Width, Frames[0].Height, FMath::Clamp(LongSide, 64, MaxLongSide)));
+	}
+	else
+	{
+		Shown = ContactSheet(Frames, MaxLongSide);
+		Save(TEXT("sheet.jpg"), Shown, TEXT("all frames in one picture, left to right then top to bottom"));
+		const FString GifPath = Folder / TEXT("capture.gif");
+		const bool bGif = FFileHelper::SaveArrayToFile(MakeGif(Frames, FrameSeconds), *GifPath);
+		OutLines.Add(FString::Printf(TEXT("animation for the user to open (256 colors): %s%s"), *GifPath, bGif ? TEXT("") : TEXT(" -- COULD NOT BE WRITTEN")));
+		const FString VideoPath = Folder / TEXT("capture.mp4");
+		FString VideoError;
+		OutLines.Add(WriteMp4(VideoPath, Frames, FrameSeconds, VideoError)
+			? FString::Printf(TEXT("video for the user to open (H.264 mp4, %.2f s a frame): %s"), FrameSeconds, *VideoPath)
+			: FString::Printf(TEXT("video: not written (%s); the GIF shows the same"), *VideoError));
+		for (int32 Index = 0; Index < Frames.Num(); ++Index)
+		{
+			FImageUtils::SaveImageByExtension(*(Folder / FString::Printf(TEXT("frame_%03d.png"), Index)), FImageView(Frames[Index].Pixels.GetData(), Frames[Index].Width, Frames[Index].Height));
+		}
+		OutLines.Add(FString::Printf(TEXT("single frames: %s (%d x %d)"), *(Folder / TEXT("frame_000.png ...")), Frames[0].Width, Frames[0].Height));
+	}
+	if (OutJpeg)
+	{
+		FImageUtils::CompressImage(*OutJpeg, TEXT("jpg"), FImageView(Shown.Pixels.GetData(), Shown.Width, Shown.Height), 85);
+	}
 }
 
 TSharedRef<IModelContextProtocolTool> AGE::Mcp::CreateCaptureTool()

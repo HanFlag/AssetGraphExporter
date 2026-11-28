@@ -34,7 +34,16 @@ public class AssetGraphExporterMcp : ModuleRules
 			// age_capture: the level viewport widget, and resizing the pictures.
 			"LevelEditor",
 			"ImageCore",
+			// age_capture "preview": the scene an asset editor shows its asset in.
+			"AdvancedPreviewScene",
 		});
+
+		// age_capture writes mp4 videos with the encoder that comes with Windows (Media Foundation).
+		if (Target.Platform == UnrealTargetPlatform.Win64)
+		{
+			PublicDelayLoadDLLs.AddRange(new string[] { "mfplat.dll", "mfreadwrite.dll" });
+			PublicSystemLibraries.AddRange(new string[] { "mfplat.lib", "mfreadwrite.lib", "mfuuid.lib" });
+		}
 
 		// age_status names the source a build came from, so two builds of the same version can be told apart.
 		PrivateDefinitions.Add("AGE_BUILD_COMMIT=\"" + GitCommit() + "\"");

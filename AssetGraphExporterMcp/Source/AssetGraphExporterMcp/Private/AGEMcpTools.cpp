@@ -9,6 +9,7 @@
 #include "AGEJsonQuery.h"
 #include "AGEMcpActivity.h"
 #include "AGEMcpAnim.h"
+#include "AGEMcpCapture.h"
 #include "AGEMcpLevel.h"
 #include "AGEMcpLiveCoding.h"
 #include "AGEMcpRevision.h"
@@ -43,6 +44,8 @@
 #include "Modules/ModuleManager.h"
 #include "HAL/PlatformOutputDevices.h"
 #include "Editor.h"
+#include "Engine/AssetManager.h"
+#include "Engine/AssetManagerTypes.h"
 #include "FileHelpers.h"
 #include "PackageTools.h"
 #include "Serialization/JsonReader.h"
@@ -1347,6 +1350,58 @@ namespace AGE::McpToolsDetail
 		return Answer.bError ? ErrorResult(Answer.Text) : TextResult(Answer.Text);
 	}
 
+	/** Asset Manager: what each primary asset type scans and how many it found; with 'type', that type's ids and their asset paths. */
+	FModelContextProtocolToolResult PrimaryAssets(const FJsonObject& Arguments)
+	{
+		const UAssetManager* Manager = UAssetManager::GetIfInitialized();
+		if (!Manager)
+		{
+			return ErrorResult(TEXT("The Asset Manager is not initialized here."));
+		}
+		TArray<FPrimaryAssetTypeInfo> Types;
+		Manager->GetPrimaryAssetTypeInfoList(Types);
+		Types.Sort([](const FPrimaryAssetTypeInfo& A, const FPrimaryAssetTypeInfo& B) { return A.PrimaryAssetType.LexicalLess(B.PrimaryAssetType); });
+
+		const FString TypeName = StringArgument(Arguments, TEXT("type"));
+		TArray<FString> Lines;
+		if (TypeName.IsEmpty())
+		{
+			Lines.Add(FString::Printf(TEXT("%d primary asset type(s) (set in Project Settings > Asset Manager). Pass 'type' for a type's ids and asset paths."), Types.Num()));
+			for (const FPrimaryAssetTypeInfo& Type : Types)
+			{
+				TArray<FPrimaryAssetId> Ids;
+				Manager->GetPrimaryAssetIdList(Type.PrimaryAssetType, Ids);
+				Lines.Add(FString::Printf(TEXT("%s: %d id(s); base class %s%s%s; scans %s%s"), *Type.PrimaryAssetType.ToString(), Ids.Num(),
+					Type.AssetBaseClassLoaded ? *Type.AssetBaseClassLoaded->GetName() : TEXT("(not loaded)"),
+					Type.bHasBlueprintClasses ? TEXT(", Blueprint classes") : TEXT(""), Type.bIsEditorOnly ? TEXT(", editor only") : TEXT(""),
+					Type.AssetScanPaths.IsEmpty() ? TEXT("nothing") : *FString::Join(Type.AssetScanPaths, TEXT(", ")),
+					Ids.IsEmpty() && !Type.bIsDynamicAsset ? TEXT(" -- WARNING: found nothing; check the folders, the base class, and that the assets' class answers GetPrimaryAssetId with this type") : TEXT("")));
+			}
+			return TextResult(FString::Join(Lines, TEXT("\n")));
+		}
+
+		const FPrimaryAssetTypeInfo* Found = Types.FindByPredicate([&TypeName](const FPrimaryAssetTypeInfo& Type) { return Type.PrimaryAssetType.ToString().Equals(TypeName, ESearchCase::IgnoreCase); });
+		if (!Found)
+		{
+			TArray<FString> Names;
+			for (const FPrimaryAssetTypeInfo& Type : Types)
+			{
+				Names.Add(Type.PrimaryAssetType.ToString());
+			}
+			return ErrorResult(FString::Printf(TEXT("No primary asset type '%s'. Types: %s."), *TypeName, *FString::Join(Names, TEXT(", "))));
+		}
+		TArray<FPrimaryAssetId> Ids;
+		Manager->GetPrimaryAssetIdList(Found->PrimaryAssetType, Ids);
+		Ids.Sort([](const FPrimaryAssetId& A, const FPrimaryAssetId& B) { return A.PrimaryAssetName.LexicalLess(B.PrimaryAssetName); });
+		const int32 Limit = FMath::Clamp(IntArgument(Arguments, TEXT("limit"), 200), 1, 5000);
+		Lines.Add(FString::Printf(TEXT("%s: %d id(s)%s"), *Found->PrimaryAssetType.ToString(), Ids.Num(), Ids.Num() > Limit ? *FString::Printf(TEXT(", first %d shown"), Limit) : TEXT("")));
+		for (int32 Index = 0; Index < Ids.Num() && Index < Limit; ++Index)
+		{
+			Lines.Add(FString::Printf(TEXT("%s -> %s"), *Ids[Index].ToString(), *Manager->GetPrimaryAssetPath(Ids[Index]).ToString()));
+		}
+		return TextResult(FString::Join(Lines, TEXT("\n")));
+	}
+
 	FModelContextProtocolToolResult OpenWindow(const FJsonObject& Arguments)
 	{
 		if (!AGE::Mcp::Activity::OpenWindow())
@@ -1562,6 +1617,15 @@ TArray<TSharedRef<IModelContextProtocolTool>> AGE::Mcp::CreateTools()
 		FSchema().Build(),
 		&Status));
 
+	Tools.Add(MakeShared<FTool>(TEXT("age_primary_assets"),
+		TEXT("What the Asset Manager found: every primary asset type with its base class, the folders and assets it scans and how many ids it found (a type that found nothing is marked). "
+			"With 'type': that type's primary asset ids and the asset each one points to."),
+		FSchema()
+			.Add(TEXT("type"), TEXT("string"), TEXT("A primary asset type, for its ids and asset paths. Optional."))
+			.Add(TEXT("limit"), TEXT("integer"), TEXT("With type: how many ids, default 200."))
+			.Build(),
+		&PrimaryAssets));
+
 	Tools.Add(MakeShared<FTool>(TEXT("age_shutdown"),
 		TEXT("Stops the background server started with Scripts\\Serve.bat. Call it before building C++ code: while it runs, the project's DLLs stay loaded and the build cannot overwrite them. Does nothing inside the editor."),
 		FSchema().Build(),
@@ -1571,5 +1635,6 @@ TArray<TSharedRef<IModelContextProtocolTool>> AGE::Mcp::CreateTools()
 		TEXT("Opens the activity window that shows the user what you are doing, or brings it to the front. It normally starts by itself; call this when the user asks for it, e.g. after closing it."),
 		FSchema().Build(),
 		&OpenWindow));
+	Tools.Add(AGE::Mcp::CreateCaptureTool());
 	return Tools;
 }

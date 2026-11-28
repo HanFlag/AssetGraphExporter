@@ -31,6 +31,9 @@ public class AssetGraphExporterMcp : ModuleRules
 			// Live Coding warning: editor notification.
 			"Slate",
 			"SlateCore",
+			// age_capture: the level viewport widget, and resizing the pictures.
+			"LevelEditor",
+			"ImageCore",
 		});
 
 		// age_status names the source a build came from, so two builds of the same version can be told apart.

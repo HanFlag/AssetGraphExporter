@@ -431,7 +431,8 @@ namespace AGE::McpLevelDetail
 			if (bLast)
 			{
 				FString Text;
-				Property->ExportText_Direct(Text, Value, nullptr, Owner, PPF_None);
+				// Not ExportText_Direct: with no default to compare with, it writes nothing for false, 0 and other zero values.
+				Property->ExportTextItem_Direct(Text, Value, nullptr, Owner, PPF_None);
 				if (Text.Len() > MaxValueChars)
 				{
 					Text = FString::Printf(TEXT("%s... (%d characters)"), *Text.Left(MaxValueChars), Text.Len());
